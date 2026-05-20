@@ -1,48 +1,78 @@
-# Proxmox & Home Server Setup Scripts
+<div align="center">
+  <h1>🚀 Ultimate Home Server Setup</h1>
+  <p><b>A modern, automated approach to bootstrapping Proxmox VE and Home Server LXC containers.</b></p>
+  
+  [![Proxmox VE](https://img.shields.io/badge/Proxmox-8.x-orange.svg?style=for-the-badge&logo=proxmox)](#)
+  [![Shell Script](https://img.shields.io/badge/Shell_Script-121011?style=for-the-badge&logo=gnu-bash&logoColor=white)](#)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](#)
+</div>
 
-A collection of streamlined, automated setup scripts designed to quickly bootstrap a fresh Proxmox environment, LXC containers, and home server services.
+---
 
-## Overview
+## 📖 Overview
 
-This repository contains scripts to automate repetitive tasks for Proxmox and self-hosted services, ensuring a secure and optimized baseline environment based on best practices.
+Setting up a home lab from scratch can be repetitive and tedious. This repository provides **production-ready bash scripts** designed to rapidly configure Proxmox nodes and LXC containers with industry best practices, saving you time and ensuring a secure baseline.
 
-## Available Scripts
+## 🛠️ Available Scripts
 
-### 1. Proxmox Safe Base Setup (`setup.sh`)
-Automates the initial setup of a Proxmox node or a standard Debian/Ubuntu server.
-- **System Updates**: Safe full system updates.
-- **Essential Packages**: Installs necessary server tools (`curl`, `git`, `zsh`, `sudo`, `htop`, etc.).
-- **User Management**: Prompts to create a new non-root user with `sudo` privileges.
-- **Repository Management**: Disables Proxmox enterprise repo and enables the `pve-no-subscription` repo.
-- **Terminal Beautification**: Configures `zsh` and `Starship` prompt for a sleek `~ ❯` interface.
+### 1️⃣ Proxmox Base Setup (`setup.sh`)
+A foundational script for fresh Proxmox VE nodes (or Debian/Ubuntu hosts). It handles repository management, creates a secure non-root user, and sets up beautiful terminal aesthetics.
 
-**Usage:**
+<details>
+<summary><b>✨ View Features</b></summary>
+
+- 🔄 **Safe Updates:** Full system update & upgrade.
+- 📦 **Essential Tools:** Installs `curl`, `git`, `htop`, `sudo`, `zsh`, and network tools.
+- 👤 **Secure User:** Replaces root usage with a proper interactive sudo user.
+- 🛠 **Repo Fixes:** Disables the paid Enterprise repo & adds the free No-Subscription repo.
+- 🎨 **Aesthetics:** Configures `Zsh` with the cross-shell `Starship` prompt (`~ ❯`).
+</details>
+
+**🚀 Run Command:**
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup.sh)
 ```
 
-### 2. Ultimate DNS Setup: AdGuard Home + Unbound (`adguard_unbound.sh`)
-Designed for an LXC container (Debian/Ubuntu) to run your own local DNS resolver and network-wide ad-blocker.
-- **Port 53 Cleanup**: Safely disables `systemd-resolved` to prevent port conflicts (a common issue when setting up DNS servers).
-- **Unbound Installation**: Configures Unbound as a recursive caching DNS resolver on port `5335`.
-- **AdGuard Home**: Installs the latest version of AdGuard Home.
-- **Integration Guide**: Provides post-installation instructions to link AdGuard Home to your local Unbound instance.
+---
 
-**Usage:**
+### 2️⃣ AdGuard Home + Unbound (`adguard_unbound.sh`)
+The ultimate local DNS setup script. Designed specifically to run inside an LXC container to provide a blazing-fast, ad-blocking recursive DNS resolver.
+
+<details>
+<summary><b>✨ View Features</b></summary>
+
+- 🛑 **Port 53 Free-up:** Automatically detects and disables `systemd-resolved` conflicts.
+- ⚡ **Unbound:** Configured securely as a recursive caching resolver on port `5335`.
+- 🛡️ **AdGuard Home:** Installs the latest stable release.
+</details>
+
+**🚀 Run Command:**
 *(Run this inside your LXC container)*
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/adguard_unbound.sh)
 ```
 
-#### Post-Installation for AdGuard Home
-After running the `adguard_unbound.sh` script:
-1. Open your browser and navigate to `http://<LXC_IP>:3000`.
-2. Follow the setup wizard (use **Port 80** for the web interface and **Port 53** for the DNS server).
-3. Once logged in, go to **Settings > DNS Settings**.
-4. Set **Upstream DNS servers** to: `127.0.0.1:5335`
-5. Set **Bootstrap DNS servers** to: `1.1.1.1`
-6. Click **Apply** and then **Test upstreams** to verify everything is working.
+#### ⚙️ AdGuard Configuration
 
-## License
+Once the script finishes, complete the setup in your browser:
 
-This project is open-source and available under the [MIT License](LICENSE). Feel free to fork and modify it to suit your specific needs.
+1. Go to `http://<YOUR_LXC_IP>:3000`
+2. Follow the wizard (Web Interface: Port `80`, DNS Server: Port `53`).
+3. Navigate to **Settings ➔ DNS Settings** in the dashboard.
+4. Set **Upstream DNS servers** to:
+   ```text
+   127.0.0.1:5335
+   ```
+5. Set **Bootstrap DNS servers** to:
+   ```text
+   1.1.1.1
+   ```
+6. Click **Apply** and **Test upstreams**.
+
+---
+
+## 🤝 Contributing
+Feel free to fork this repository, submit Pull Requests, or open Issues to suggest improvements or new scripts!
+
+## 📜 License
+Distributed under the MIT License. See `LICENSE` for more information.
