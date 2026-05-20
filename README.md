@@ -1,59 +1,47 @@
-# Proxmox & Home Server Setup Script
+# Proxmox & Home Server Setup Scripts
 
-A streamlined, automated setup script designed to quickly bootstrap a fresh Proxmox environment or a standard Debian/Ubuntu-based Home Server.
+A collection of streamlined, automated setup scripts designed to quickly bootstrap a fresh Proxmox environment, LXC containers, and home server services.
 
 ## Overview
 
-When setting up a new Proxmox node or a Linux home server, there are several repetitive tasks required to get a secure and optimized baseline environment. This script automates that process, transitioning you from a bare-bones root environment into a customized, secure, and ready-to-use workspace.
+This repository contains scripts to automate repetitive tasks for Proxmox and self-hosted services, ensuring a secure and optimized baseline environment based on best practices.
 
-## Features
+## Available Scripts
 
-- **Proxmox Repository Management**: Automatically disables the enterprise repository (which requires a paid subscription) and enables the free `pve-no-subscription` repository.
-- **System Updates**: Performs a full system update and upgrade (`apt-get update && apt-get dist-upgrade`).
-- **Essential Packages**: Installs necessary server tools (`curl`, `git`, `zsh`, `sudo`, `htop`, `wget`, `unzip`, `neofetch`).
-- **User Management**: Prompts to create a new non-root user and automatically grants them `sudo` privileges.
-- **Docker Integration**: Installs Docker and Docker Compose, adding the new user to the `docker` group so you don't need `sudo` for container management.
-- **Terminal Customization**: 
-  - Changes the default shell from `bash` to `zsh`.
-  - Installs **Oh My Zsh**.
-  - Configures the **Agnoster** theme for a sleek look.
-  - Installs essential productivity plugins: `zsh-autosuggestions` and `zsh-syntax-highlighting`.
+### 1. Proxmox Safe Base Setup (`setup.sh`)
+Automates the initial setup of a Proxmox node or a standard Debian/Ubuntu server.
+- **System Updates**: Safe full system updates.
+- **Essential Packages**: Installs necessary server tools (`curl`, `git`, `zsh`, `sudo`, `htop`, etc.).
+- **User Management**: Prompts to create a new non-root user with `sudo` privileges.
+- **Repository Management**: Disables Proxmox enterprise repo and enables the `pve-no-subscription` repo.
+- **Terminal Beautification**: Configures `zsh` and `Starship` prompt for a sleek `~ ❯` interface.
 
-## Prerequisites
-
-- A fresh installation of Proxmox VE (tested on v8 / Bookworm) or a Debian/Ubuntu-based system.
-- Root access to the server.
-
-## Installation & Usage
-
-You can run this script using a single command directly from your terminal:
-
+**Usage:**
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/USERNAME/REPO_NAME/main/setup.sh)
+bash <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup.sh)
 ```
 
-Alternatively, you can clone the repository or download the script manually:
+### 2. Ultimate DNS Setup: AdGuard Home + Unbound (`adguard_unbound.sh`)
+Designed for an LXC container (Debian/Ubuntu) to run your own local DNS resolver and network-wide ad-blocker.
+- **Port 53 Cleanup**: Safely disables `systemd-resolved` to prevent port conflicts (a common issue when setting up DNS servers).
+- **Unbound Installation**: Configures Unbound as a recursive caching DNS resolver on port `5335`.
+- **AdGuard Home**: Installs the latest version of AdGuard Home.
+- **Integration Guide**: Provides post-installation instructions to link AdGuard Home to your local Unbound instance.
 
+**Usage:**
+*(Run this inside your LXC container)*
 ```bash
-# 1. Download the script
-wget https://raw.githubusercontent.com/USERNAME/REPO_NAME/main/setup.sh
-
-# 2. Make it executable
-chmod +x setup.sh
-
-# 3. Run the script as root
-./setup.sh
+bash <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/adguard_unbound.sh)
 ```
 
-## Post-Installation
-
-Once the script completes, log in as your newly created user:
-
-```bash
-su - <your-new-username>
-```
-
-Your environment will now be equipped with Zsh, Docker, and a fully updated system ready for your home lab projects.
+#### Post-Installation for AdGuard Home
+After running the `adguard_unbound.sh` script:
+1. Open your browser and navigate to `http://<LXC_IP>:3000`.
+2. Follow the setup wizard (use **Port 80** for the web interface and **Port 53** for the DNS server).
+3. Once logged in, go to **Settings > DNS Settings**.
+4. Set **Upstream DNS servers** to: `127.0.0.1:5335`
+5. Set **Bootstrap DNS servers** to: `1.1.1.1`
+6. Click **Apply** and then **Test upstreams** to verify everything is working.
 
 ## License
 
