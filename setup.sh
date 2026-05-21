@@ -60,49 +60,57 @@ lsb-release
 
 # 4) CREATE USER
 echo -e "${GREEN}[4/6] Creating user...${NC}"
-while true; do
-    read -p "Enter username (e.g. john): " USERNAME
 
-    if [ -z "$USERNAME" ]; then
-        echo -e "${RED}Username cannot be empty. Please try again.${NC}"
-        continue
-    fi
+EXISTING_USER=$(awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' /etc/passwd | head -n 1)
 
-    if id "$USERNAME" &>/dev/null; then
-        echo -e "${YELLOW}User '$USERNAME' already exists, skipping creation...${NC}"
-        break
-    fi
+if [ -n "$EXISTING_USER" ]; then
+    echo -e "${YELLOW}Existing user found: '$EXISTING_USER'. Skipping new user creation.${NC}"
+    USERNAME="$EXISTING_USER"
+else
+    while true; do
+        read -p "Enter username (e.g. john): " USERNAME
 
-    set +e
-    adduser "$USERNAME"
-    ADD_STATUS=$?
-    set -e
-
-    if [ $ADD_STATUS -eq 0 ]; then
-        usermod -aG sudo "$USERNAME"
-        echo -e "${GREEN}User created successfully.${NC}"
-        break
-    else
-        echo -e "${RED}Error: Invalid username format (e.g., starts with a number).${NC}"
-        read -p "Do you want to force adding this username anyway? (y/N): " FORCE
-        if [[ "$FORCE" =~ ^[Yy]$ ]]; then
-            set +e
-            adduser --allow-bad-names "$USERNAME"
-            FORCE_STATUS=$?
-            set -e
-
-            if [ $FORCE_STATUS -eq 0 ]; then
-                usermod -aG sudo "$USERNAME"
-                echo -e "${GREEN}User created successfully with --allow-bad-names.${NC}"
-                break
-            else
-                echo -e "${RED}Still failed to create user. Please try a different name.${NC}"
-            fi
-        else
-            echo -e "${YELLOW}Please enter a standard username (starts with a letter, lowercase only, no spaces).${NC}"
+        if [ -z "$USERNAME" ]; then
+            echo -e "${RED}Username cannot be empty. Please try again.${NC}"
+            continue
         fi
-    fi
-done
+
+        if id "$USERNAME" &>/dev/null; then
+            echo -e "${YELLOW}User '$USERNAME' already exists, skipping creation...${NC}"
+            break
+        fi
+
+        set +e
+        adduser "$USERNAME"
+        ADD_STATUS=$?
+        set -e
+
+        if [ $ADD_STATUS -eq 0 ]; then
+            usermod -aG sudo "$USERNAME"
+            echo -e "${GREEN}User created successfully.${NC}"
+            break
+        else
+            echo -e "${RED}Error: Invalid username format (e.g., starts with a number).${NC}"
+            read -p "Do you want to force adding this username anyway? (y/N): " FORCE
+            if [[ "$FORCE" =~ ^[Yy]$ ]]; then
+                set +e
+                adduser --allow-bad-names "$USERNAME"
+                FORCE_STATUS=$?
+                set -e
+
+                if [ $FORCE_STATUS -eq 0 ]; then
+                    usermod -aG sudo "$USERNAME"
+                    echo -e "${GREEN}User created successfully with --allow-bad-names.${NC}"
+                    break
+                else
+                    echo -e "${RED}Still failed to create user. Please try a different name.${NC}"
+                fi
+            else
+                echo -e "${YELLOW}Please enter a standard username (starts with a letter, lowercase only, no spaces).${NC}"
+            fi
+        fi
+    done
+fi
 
 # 5) TERMINAL BEAUTIFICATION (Oh My Zsh + Plugins)
 echo -e "${GREEN}[5/6] Installing Zsh, Oh My Zsh & Plugins...${NC}"
