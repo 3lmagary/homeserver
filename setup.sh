@@ -17,12 +17,12 @@ echo -e "==============================${NC}"
 
 # 1) DISABLE ENTERPRISE REPO SAFELY
 echo -e "${GREEN}[1/6] Cleaning Proxmox repos...${NC}"
-if [ -f /etc/apt/sources.list.d/pve-enterprise.list ]; then
-    sed -i 's/^deb/#deb/' /etc/apt/sources.list.d/pve-enterprise.list
-fi
-if [ -f /etc/apt/sources.list.d/ceph.list ]; then
-    sed -i 's/^deb/#deb/' /etc/apt/sources.list.d/ceph.list
-fi
+# Disable all Proxmox & Ceph Enterprise repos dynamically in all apt sources
+for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
+    if [ -f "$f" ]; then
+        sed -i 's/^[[:space:]]*deb[[:space:]]*https:\/\/enterprise.proxmox.com/# &/' "$f"
+    fi
+done
 
 # Get Debian codename dynamically
 source /etc/os-release
