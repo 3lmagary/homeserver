@@ -18,9 +18,14 @@ echo -e "==============================${NC}"
 # 1) DISABLE ENTERPRISE REPO SAFELY
 echo -e "${GREEN}[1/6] Cleaning Proxmox repos...${NC}"
 # Disable all Proxmox & Ceph Enterprise repos dynamically in all apt sources
-for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list; do
-    if [ -f "$f" ]; then
-        sed -i 's/^[[:space:]]*deb[[:space:]]*https:\/\/enterprise.proxmox.com/# &/' "$f"
+if [ -f /etc/apt/sources.list ]; then
+    sed -i 's/^\s*deb\s*https\?:\/\/enterprise\.proxmox\.com/# &/' /etc/apt/sources.list 2>/dev/null || true
+fi
+
+for f in /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+    if [ -f "$f" ] && grep -q "enterprise.proxmox.com" "$f"; then
+        mv "$f" "${f}.disabled"
+        echo -e "${GREEN}Disabled enterprise repo file: $f${NC}"
     fi
 done
 
