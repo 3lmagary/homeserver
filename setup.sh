@@ -60,15 +60,49 @@ lsb-release
 
 # 4) CREATE USER
 echo -e "${GREEN}[4/6] Creating user...${NC}"
-read -p "Enter username: " USERNAME
+while true; do
+    read -p "Enter username (e.g. john): " USERNAME
 
-if id "$USERNAME" &>/dev/null; then
-    echo -e "${RED}User exists, skipping...${NC}"
-else
+    if [ -z "$USERNAME" ]; then
+        echo -e "${RED}Username cannot be empty. Please try again.${NC}"
+        continue
+    fi
+
+    if id "$USERNAME" &>/dev/null; then
+        echo -e "${YELLOW}User '$USERNAME' already exists, skipping creation...${NC}"
+        break
+    fi
+
+    set +e
     adduser "$USERNAME"
-    usermod -aG sudo "$USERNAME"
-    echo -e "${GREEN}User created.${NC}"
-fi
+    ADD_STATUS=$?
+    set -e
+
+    if [ $ADD_STATUS -eq 0 ]; then
+        usermod -aG sudo "$USERNAME"
+        echo -e "${GREEN}User created successfully.${NC}"
+        break
+    else
+        echo -e "${RED}Error: Invalid username format (e.g., starts with a number).${NC}"
+        read -p "Do you want to force adding this username anyway? (y/N): " FORCE
+        if [[ "$FORCE" =~ ^[Yy]$ ]]; then
+            set +e
+            adduser --allow-bad-names "$USERNAME"
+            FORCE_STATUS=$?
+            set -e
+
+            if [ $FORCE_STATUS -eq 0 ]; then
+                usermod -aG sudo "$USERNAME"
+                echo -e "${GREEN}User created successfully with --allow-bad-names.${NC}"
+                break
+            else
+                echo -e "${RED}Still failed to create user. Please try a different name.${NC}"
+            fi
+        else
+            echo -e "${YELLOW}Please enter a standard username (starts with a letter, lowercase only, no spaces).${NC}"
+        fi
+    fi
+done
 
 # 5) TERMINAL BEAUTIFICATION (Zsh + Starship)
 echo -e "${GREEN}[5/6] Installing Zsh & Starship Prompt (~ ❯)...${NC}"
