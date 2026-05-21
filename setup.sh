@@ -104,19 +104,32 @@ while true; do
     fi
 done
 
-# 5) TERMINAL BEAUTIFICATION (Zsh + Starship)
-echo -e "${GREEN}[5/6] Installing Zsh & Starship Prompt (~ ❯)...${NC}"
-apt install -y zsh
+# 5) TERMINAL BEAUTIFICATION (Oh My Zsh + Plugins)
+echo -e "${GREEN}[5/6] Installing Zsh, Oh My Zsh & Plugins...${NC}"
+apt install -y zsh git
+
+install_omz() {
+    local TARGET_USER=$1
+    local HOME_DIR=$2
+
+    # Install Oh My Zsh unattended
+    su - "$TARGET_USER" -c 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended'
+    
+    # Clone plugins
+    su - "$TARGET_USER" -c "git clone https://github.com/zsh-users/zsh-autosuggestions $HOME_DIR/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+    su - "$TARGET_USER" -c "git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $HOME_DIR/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+
+    # Enable plugins and set theme to agnoster
+    su - "$TARGET_USER" -c "sed -i 's/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/' $HOME_DIR/.zshrc"
+    su - "$TARGET_USER" -c "sed -i 's/ZSH_THEME=\"robbyrussell\"/ZSH_THEME=\"agnoster\"/' $HOME_DIR/.zshrc"
+}
+
+# Run installation for created user and root
+install_omz "$USERNAME" "/home/$USERNAME"
+install_omz "root" "/root"
+
 chsh -s $(which zsh) "$USERNAME" || true
 chsh -s $(which zsh) root || true
-
-# Install Starship cross-shell prompt
-curl -sS https://starship.rs/install.sh | sh -s -- -y
-
-# Configure Starship for the new user and root
-echo 'eval "$(starship init zsh)"' >> /home/$USERNAME/.zshrc
-chown $USERNAME:$USERNAME /home/$USERNAME/.zshrc
-echo 'eval "$(starship init zsh)"' >> /root/.zshrc
 
 # 6) CLEANUP
 echo -e "${GREEN}[6/6] Cleaning system...${NC}"
