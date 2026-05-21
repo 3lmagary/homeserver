@@ -15,13 +15,30 @@ echo -e "${BLUE}=============================="
 echo " Proxmox Setup Script"
 echo -e "==============================${NC}"
 
-# 1) SYSTEM UPDATE (SAFE ONLY)
-echo -e "${GREEN}[1/6] Updating system safely...${NC}"
+# 1) DISABLE ENTERPRISE REPO SAFELY
+echo -e "${GREEN}[1/6] Cleaning Proxmox repos...${NC}"
+if [ -f /etc/apt/sources.list.d/pve-enterprise.list ]; then
+    sed -i 's/^deb/#deb/' /etc/apt/sources.list.d/pve-enterprise.list
+fi
+if [ -f /etc/apt/sources.list.d/ceph.list ]; then
+    sed -i 's/^deb/#deb/' /etc/apt/sources.list.d/ceph.list
+fi
+
+# Get Debian codename dynamically
+source /etc/os-release
+CODENAME=${VERSION_CODENAME:-bookworm}
+
+# Ensure no duplicate repo injection
+grep -q "pve-no-subscription" /etc/apt/sources.list || \
+echo "deb http://download.proxmox.com/debian/pve $CODENAME pve-no-subscription" >> /etc/apt/sources.list
+
+# 2) SYSTEM UPDATE (SAFE ONLY)
+echo -e "${GREEN}[2/6] Updating system safely...${NC}"
 apt update
 apt full-upgrade -y
 
-# 2) ESSENTIAL TOOLS ONLY
-echo -e "${GREEN}[2/6] Installing base tools...${NC}"
+# 3) ESSENTIAL TOOLS ONLY
+echo -e "${GREEN}[3/6] Installing base tools...${NC}"
 apt install -y \
 curl \
 wget \
@@ -36,8 +53,8 @@ ca-certificates \
 gnupg \
 lsb-release
 
-# 3) CREATE USER
-echo -e "${GREEN}[3/6] Creating user...${NC}"
+# 4) CREATE USER
+echo -e "${GREEN}[4/6] Creating user...${NC}"
 read -p "Enter username: " USERNAME
 
 if id "$USERNAME" &>/dev/null; then
@@ -47,18 +64,6 @@ else
     usermod -aG sudo "$USERNAME"
     echo -e "${GREEN}User created.${NC}"
 fi
-
-# 4) DISABLE ENTERPRISE REPO SAFELY
-echo -e "${GREEN}[4/6] Cleaning Proxmox repos...${NC}"
-if [ -f /etc/apt/sources.list.d/pve-enterprise.list ]; then
-    sed -i 's/^deb/#deb/' /etc/apt/sources.list.d/pve-enterprise.list
-fi
-
-# Ensure no duplicate repo injection
-grep -q "pve-no-subscription" /etc/apt/sources.list || \
-echo "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription" >> /etc/apt/sources.list
-
-apt update
 
 # 5) TERMINAL BEAUTIFICATION (Zsh + Starship)
 echo -e "${GREEN}[5/6] Installing Zsh & Starship Prompt (~ ❯)...${NC}"
