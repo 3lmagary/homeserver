@@ -109,8 +109,15 @@ if [ "$USE_EXTRA_DISK" == "yes" ]; then
 fi
 
 echo -e "\n${GREEN}[2/4] Preparing LXC Configuration...${NC}"
-read -p "Enter a password for CouchDB Admin (Needed for Obsidian LiveSync): " COUCHDB_PASS < /dev/tty
-if [ -z "$COUCHDB_PASS" ]; then COUCHDB_PASS="admin"; fi
+
+SYNC_USER=${SUDO_USER:-admin}
+if [ "$SYNC_USER" == "root" ]; then SYNC_USER="admin"; fi
+
+read -p "Enter a password for user ($SYNC_USER) [Used for CouchDB & Syncthing]: " SYNC_PASS < /dev/tty
+if [ -z "$SYNC_PASS" ]; then
+    echo -e "${RED}Password cannot be empty. Defaulting to 'admin'.${NC}"
+    SYNC_PASS="admin"
+fi
 
 CTID=$(pvesh get /cluster/nextid)
 pveam update >/dev/null 2>&1
@@ -176,12 +183,13 @@ pct exec $CTID -- bash -c "curl -fsSL https://couchdb.apache.org/repo/keys.asc |
 pct exec $CTID -- bash -c "source /etc/os-release && echo \"deb [signed-by=/usr/share/keyrings/couchdb-archive-keyring.gpg] https://apache.jfrog.io/artifactory/couchdb-deb/ \${VERSION_CODENAME} main\" | tee /etc/apt/sources.list.d/couchdb.list >/dev/null"
 pct exec $CTID -- bash -c "echo 'couchdb couchdb/mode select standalone' | debconf-set-selections"
 pct exec $CTID -- bash -c "echo 'couchdb couchdb/bindaddress string 0.0.0.0' | debconf-set-selections"
-pct exec $CTID -- bash -c "echo 'couchdb couchdb/adminpass string $COUCHDB_PASS' | debconf-set-selections"
-pct exec $CTID -- bash -c "echo 'couchdb couchdb/adminpass_again string $COUCHDB_PASS' | debconf-set-selections"
+pct exec $CTID -- bash -c "echo 'couchdb couchdb/adminpass string $SYNC_PASS' | debconf-set-selections"
+pct exec $CTID -- bash -c "echo 'couchdb couchdb/adminpass_again string $SYNC_PASS' | debconf-set-selections"
 pct exec $CTID -- bash -c "echo 'couchdb couchdb/erlang_magic_cookie string couchdb' | debconf-set-selections"
 pct exec $CTID -- bash -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y couchdb"
 
 pct exec $CTID -- bash -c "echo -e '\n[chttpd]\nbind_address = 0.0.0.0' >> /opt/couchdb/etc/local.ini"
+pct exec $CTID -- bash -c "echo -e '\n[admins]\n$SYNC_USER = $SYNC_PASS' >> /opt/couchdb/etc/local.ini"
 pct exec $CTID -- bash -c "chown -R couchdb:couchdb /opt/couchdb /etc/couchdb 2>/dev/null || true"
 pct exec $CTID -- bash -c "systemctl restart couchdb"
 
@@ -189,12 +197,12 @@ echo "Waiting for CouchDB to start before configuring CORS..."
 sleep 5
 
 echo "Configuring CouchDB for Obsidian LiveSync..."
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${COUCHDB_PASS}@127.0.0.1:5984/_node/_local/_config/httpd/enable_cors -d '\"true\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${COUCHDB_PASS}@127.0.0.1:5984/_node/_local/_config/cors/origins -d '\"*\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${COUCHDB_PASS}@127.0.0.1:5984/_node/_local/_config/cors/credentials -d '\"true\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${COUCHDB_PASS}@127.0.0.1:5984/_node/_local/_config/cors/methods -d '\"GET, PUT, POST, HEAD, DELETE\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${COUCHDB_PASS}@127.0.0.1:5984/_node/_local/_config/cors/headers -d '\"accept, authorization, content-type, origin, referer, x-csrf-token\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${COUCHDB_PASS}@127.0.0.1:5984/_node/_local/_config/couchdb/max_document_size -d '\"50000000\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/httpd/enable_cors -d '\"true\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/origins -d '\"*\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/credentials -d '\"true\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/methods -d '\"GET, PUT, POST, HEAD, DELETE\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/headers -d '\"accept, authorization, content-type, origin, referer, x-csrf-token\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/couchdb/max_document_size -d '\"50000000\"'"
 
 # SYNCTHING
 echo "Installing Syncthing..."
@@ -236,6 +244,13 @@ fi
 echo -e ""
 echo -e "${GREEN}2) CouchDB (Obsidian LiveSync)${NC}"
 echo -e "URL: ${YELLOW}http://$LXC_IP:5984/_utils/${NC}"
-echo -e "Username: admin"
-echo -e "Password: $COUCHDB_PASS"
+echo -e "Username: $SYNC_USER"
+echo -e "Password: $SYNC_PASS"
+echo -e ""
+echo -e "${YELLOW}To configure Obsidian:${NC}"
+echo -e " 1. Install 'Self-hosted LiveSync' plugin."
+echo -e " 2. In plugin settings, enter URI: http://$LXC_IP:5984"
+echo -e " 3. Username: $SYNC_USER / Password: $SYNC_PASS"
+echo -e " 4. Database Name: obsidian"
+echo -e " 5. Click 'Test' and then 'Check Database'. It will create the DB automatically."
 echo -e "${BLUE}==========================================${NC}"
