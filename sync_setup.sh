@@ -195,7 +195,7 @@ admin = $SYNC_PASS
 EOF"
 pct exec $CTID -- bash -c "mkdir -p /opt/couchdb /etc/couchdb /var/lib/couchdb /var/log/couchdb /var/run/couchdb 2>/dev/null || true"
 pct exec $CTID -- bash -c "chown -R couchdb:couchdb /opt/couchdb /etc/couchdb /var/lib/couchdb /var/log/couchdb /var/run/couchdb 2>/dev/null || true"
-pct exec $CTID -- bash -c "systemctl restart couchdb"
+pct exec $CTID -- bash -c "systemctl enable --now couchdb"
 
 echo "Waiting for CouchDB to start before configuring CORS..."
 sleep 5
