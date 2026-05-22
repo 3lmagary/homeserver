@@ -177,6 +177,7 @@ pct exec $CTID -- bash -c "rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock"
 pct exec $CTID -- bash -c "dpkg --configure -a"
 
 pct exec $CTID -- bash -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y adduser"
+pct exec $CTID -- bash -c "useradd -r -d /opt/couchdb -M -s /usr/sbin/nologin couchdb 2>/dev/null || true"
 
 pct exec $CTID -- bash -c "curl -fsSL https://couchdb.apache.org/repo/keys.asc | gpg --dearmor | tee /usr/share/keyrings/couchdb-archive-keyring.gpg >/dev/null 2>&1"
 pct exec $CTID -- bash -c "source /etc/os-release && echo \"deb [signed-by=/usr/share/keyrings/couchdb-archive-keyring.gpg] https://apache.jfrog.io/artifactory/couchdb-deb/ \${VERSION_CODENAME} main\" | tee /etc/apt/sources.list.d/couchdb.list >/dev/null"
@@ -188,6 +189,7 @@ pct exec $CTID -- bash -c "echo 'couchdb couchdb/erlang_magic_cookie string couc
 pct exec $CTID -- bash -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y couchdb"
 
 pct exec $CTID -- bash -c "echo -e '\n[chttpd]\nbind_address = 0.0.0.0' >> /opt/couchdb/etc/local.ini"
+pct exec $CTID -- bash -c "chown -R couchdb:couchdb /opt/couchdb /etc/couchdb /var/lib/couchdb /var/log/couchdb /var/run/couchdb 2>/dev/null || true"
 pct exec $CTID -- bash -c "systemctl restart couchdb"
 
 echo "Waiting for CouchDB to start before configuring CORS..."
