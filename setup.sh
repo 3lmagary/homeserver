@@ -131,19 +131,28 @@ install_omz() {
     local TARGET_USER=$1
     local HOME_DIR=$2
 
-    # Install Oh My Zsh unattended
-    su - "$TARGET_USER" -c 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended'
-    
-    # Clone plugins
-    su - "$TARGET_USER" -c "git clone https://github.com/zsh-users/zsh-autosuggestions $HOME_DIR/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
-    su - "$TARGET_USER" -c "git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $HOME_DIR/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+    # Install Oh My Zsh only if not already installed
+    if [ ! -d "$HOME_DIR/.oh-my-zsh" ]; then
+        su - "$TARGET_USER" -c 'sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended'
+    else
+        echo -e "${GREEN}Oh My Zsh already installed for $TARGET_USER, skipping...${NC}"
+    fi
 
-    # Enable plugins and set theme to robbyrussell
-    su - "$TARGET_USER" -c "sed -i 's/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/' $HOME_DIR/.zshrc"
-    
-    # Ensure robbyrussell is set in case of a rerun
-    su - "$TARGET_USER" -c "sed -i 's/ZSH_THEME=\"powerlevel10k\/powerlevel10k\"/ZSH_THEME=\"robbyrussell\"/' $HOME_DIR/.zshrc"
-    su - "$TARGET_USER" -c "sed -i 's/ZSH_THEME=\"agnoster\"/ZSH_THEME=\"robbyrussell\"/' $HOME_DIR/.zshrc"
+    # Clone plugins only if not already present
+    if [ ! -d "$HOME_DIR/.oh-my-zsh/custom/plugins/zsh-autosuggestions" ]; then
+        su - "$TARGET_USER" -c "git clone https://github.com/zsh-users/zsh-autosuggestions $HOME_DIR/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+    fi
+    if [ ! -d "$HOME_DIR/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" ]; then
+        su - "$TARGET_USER" -c "git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $HOME_DIR/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+    fi
+
+    # Ensure plugins are enabled
+    grep -q "zsh-autosuggestions" "$HOME_DIR/.zshrc" || \
+        sed -i 's/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/' "$HOME_DIR/.zshrc"
+
+    # Ensure theme is robbyrussell
+    sed -i 's/ZSH_THEME="powerlevel10k\/powerlevel10k"/ZSH_THEME="robbyrussell"/' "$HOME_DIR/.zshrc"
+    sed -i 's/ZSH_THEME="agnoster"/ZSH_THEME="robbyrussell"/' "$HOME_DIR/.zshrc"
 }
 
 # Run installation for created user and root
