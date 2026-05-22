@@ -157,8 +157,10 @@ else
         CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
         if [ -z "$CIDR" ]; then CIDR="24"; fi
         
+        EXAMPLE_IP=$(echo "$GW" | awk -F. '{print $1"."$2"."$3".50"}')
+        
         echo -e "\nDetected Router/Gateway: $GW"
-        read -p "Enter the desired IP address for the NAS (e.g. 192.168.1.50): " STATIC_IP
+        read -p "Enter the desired IP address for the NAS (e.g. $EXAMPLE_IP): " STATIC_IP
         if [ -z "$STATIC_IP" ]; then
             NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
             echo "No IP entered. Falling back to DHCP."
