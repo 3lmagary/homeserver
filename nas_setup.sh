@@ -349,10 +349,10 @@ else
     echo -e "Mode             : Public (No Password)"
 fi
 echo -e ""
-echo -e "To access your files from Windows:"
-echo -e "1. Open File Explorer"
-printf "2. In the address bar, type: %b\\\\\\\\%s%b  (or smb://%s for Mac)\n" "${YELLOW}" "$LXC_IP" "${NC}" "$LXC_IP"
+echo -e "To access your files:"
+printf "• Windows: Open File Explorer and type %b\\\\\\\\%s%b\n" "${YELLOW}" "$LXC_IP" "${NC}"
+echo -e "• Mac/Linux: Open your File Manager and type ${YELLOW}smb://$LXC_IP${NC}"
 if [ "$SAMBA_MODE" == "secure" ]; then
-    echo -e "3. Enter '$SMB_USER' and your password."
+    echo -e "\nLogin with Username: ${YELLOW}$SMB_USER${NC} and your password."
 fi
 echo -e "${BLUE}==========================================${NC}"
