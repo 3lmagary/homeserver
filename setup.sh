@@ -163,6 +163,7 @@ chsh -s $(which zsh) root || true
 
 # 6) AUTO-LOGIN SETUP
 echo -e "${GREEN}[6/7] Configuring auto-login for $USERNAME...${NC}"
+# For physical monitors (tty1)
 mkdir -p /etc/systemd/system/getty@tty1.service.d/
 cat <<EOF > /etc/systemd/system/getty@tty1.service.d/override.conf
 [Service]
@@ -170,6 +171,16 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin $USERNAME --noclear %I \$TERM
 EOF
 systemctl daemon-reload || true
+
+# For Proxmox Web GUI Shell (which always defaults to root)
+# We append a switch command to root's .zshrc so it drops into the user automatically
+if ! grep -q "su - $USERNAME" /root/.zshrc; then
+    echo -e "\n# Auto-switch to user in Proxmox Web Shell" >> /root/.zshrc
+    echo "if [ \"\$EUID\" -eq 0 ] && [ -z \"\$SSH_CLIENT\" ]; then" >> /root/.zshrc
+    echo "    echo -e \"\e[33m[Proxmox Web Shell] Auto-switching to user: $USERNAME...\e[0m\"" >> /root/.zshrc
+    echo "    su - $USERNAME" >> /root/.zshrc
+    echo "fi" >> /root/.zshrc
+fi
 
 # 7) CLEANUP
 echo -e "${GREEN}[7/7] Cleaning system...${NC}"
