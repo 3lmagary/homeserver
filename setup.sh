@@ -1,6 +1,5 @@
 #!/bin/bash
 
-set -e
 
 # =============================
 # Proxmox Safe Base Setup
