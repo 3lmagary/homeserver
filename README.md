@@ -72,6 +72,31 @@ sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/nas_setu
 
 ---
 
+### 3️⃣ Sync & Backup Server (`sync_setup.sh`)
+The ultimate all-in-one container for keeping your data safe and in sync across devices. It deploys **Syncthing** for massive file syncing/backups, and **CouchDB** for real-time `Obsidian LiveSync`.
+
+> **Note:** Just like the NAS script, run this with `sudo` so it can scan physical drives and create the LXC.
+
+<details>
+<summary><b>✨ View Features</b></summary>
+
+- 💽 **Optional Storage Binding:** Intelligently asks if you want to dedicate a physical hard drive to Syncthing (to store large backups/movies) or just use the LXC's internal storage.
+- 🔄 **Syncthing (LAN-Only Mode):** Installs and configures Syncthing. Automatically disables Global Discovery, Relaying, and NAT Traversal so your data stays strictly on your local network for maximum privacy.
+- 📓 **Obsidian LiveSync Ready:** 
+  - Automatically installs `adduser` and dependencies, and pre-seeds all prompts to bypass interactive Debian blue screens.
+  - Deploys **CouchDB** and explicitly binds it to `0.0.0.0` to allow external connections.
+  - Automatically configures complex CORS headers via `curl` so the Obsidian plugin can connect immediately without errors.
+- 🛡️ **Bulletproof Installation:** Includes background cleanup processes (`killall unattended-upgrades`, dpkg lock removal) to ensure the script runs flawlessly on the first try without hanging.
+</details>
+
+**🚀 Run Command:**
+*(Run from your Proxmox Host as a regular sudo user)*
+```bash
+sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/sync_setup.sh | sudo bash
+```
+
+---
+
 ## 🤝 Contributing
 Feel free to fork this repository, submit Pull Requests, or open Issues to suggest improvements or new scripts!
 
