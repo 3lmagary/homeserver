@@ -23,26 +23,35 @@ fi
 # 1) DISK DETECTION & SELECTION
 echo -e "${GREEN}[1/5] Scanning for available drives...${NC}"
 
-# List block devices excluding loop, rom, and the main pve LVM partitions
-AVAILABLE_DISKS=$(lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT,MODEL -p -n -l | grep -vE "^/dev/pve|^/dev/mapper|swap|LVM2_member")
+# Get a reliable array of disks (just NAME)
+mapfile -t DISK_PATHS < <(lsblk -o NAME -p -n -l | grep -vE "^/dev/pve|^/dev/mapper|swap|LVM2_member|sr0")
 
-if [ -z "$AVAILABLE_DISKS" ]; then
+if [ ${#DISK_PATHS[@]} -eq 0 ]; then
     echo -e "${RED}No available disks found (other than the system drive). Connect a drive and try again.${NC}"
     exit 1
 fi
 
 echo -e "\n${YELLOW}Available Disks/Partitions:${NC}"
-echo "$AVAILABLE_DISKS" | awk '{printf "[%d] %s (Size: %s, Format: %s, Model: %s, Mount: %s)\n", NR, $1, $2, $3, $5, $4}'
+i=1
+for disk in "${DISK_PATHS[@]}"; do
+    # Get details safely line by line to avoid column shifting
+    D_SIZE=$(lsblk -o SIZE -n -d "$disk" 2>/dev/null | tr -d ' ')
+    D_FSTYPE=$(blkid -s TYPE -o value "$disk" 2>/dev/null || echo "Unknown/None")
+    D_MODEL=$(lsblk -o MODEL -n -d "$disk" 2>/dev/null | xargs)
+    
+    echo "[$i] $disk (Size: $D_SIZE, Format: $D_FSTYPE, Model: $D_MODEL)"
+    ((i++))
+done
 
 echo ""
-read -p "Enter the number of the drive/partition you want to use (e.g. 1): " DISK_NUM
+read -p "Enter the number of the drive/partition you want to use (e.g. 1): " DISK_NUM < /dev/tty
 
-SELECTED_DISK=$(echo "$AVAILABLE_DISKS" | sed -n "${DISK_NUM}p" | awk '{print $1}')
-
-if [ -z "$SELECTED_DISK" ] || [ ! -b "$SELECTED_DISK" ]; then
-    echo -e "${RED}Invalid selection or drive does not exist. Exiting.${NC}"
+if ! [[ "$DISK_NUM" =~ ^[0-9]+$ ]] || [ "$DISK_NUM" -lt 1 ] || [ "$DISK_NUM" -gt "${#DISK_PATHS[@]}" ]; then
+    echo -e "${RED}Invalid selection. Exiting.${NC}"
     exit 1
 fi
+
+SELECTED_DISK="${DISK_PATHS[$((DISK_NUM-1))]}"
 
 echo -e "${GREEN}Selected Drive: $SELECTED_DISK${NC}"
 
@@ -59,7 +68,7 @@ else
     fi
 
     echo -e "${YELLOW}For the best performance and stability on a server, Linux native format (ext4) is highly recommended.${NC}"
-    read -p "Do you want to WIPE THIS ENTIRE DRIVE and format it to ext4? (y/N): " FORMAT_CHOICE
+    read -p "Do you want to WIPE THIS ENTIRE DRIVE and format it to ext4? (y/N): " FORMAT_CHOICE < /dev/tty
 
     if [[ "$FORMAT_CHOICE" =~ ^[Yy]$ ]]; then
         echo -e "${RED}WARNING: ALL DATA ON $SELECTED_DISK WILL BE ERASED in 5 seconds...${NC}"
@@ -150,7 +159,7 @@ else
     echo -e "\n${YELLOW}Network Configuration for NAS:${NC}"
     echo "  [1] DHCP (Automatic IP from Router)"
     echo "  [2] Static IP (Recommended so the IP never changes)"
-    read -p "Choose [1 or 2, Default: 1]: " NET_CHOICE
+    read -p "Choose [1 or 2, Default: 1]: " NET_CHOICE < /dev/tty
     
     if [ "$NET_CHOICE" == "2" ]; then
         GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
@@ -160,7 +169,7 @@ else
         EXAMPLE_IP=$(echo "$GW" | awk -F. '{print $1"."$2"."$3".50"}')
         
         echo -e "\nDetected Router/Gateway: $GW"
-        read -p "Enter the desired IP address for the NAS (e.g. $EXAMPLE_IP): " STATIC_IP
+        read -p "Enter the desired IP address for the NAS (e.g. $EXAMPLE_IP): " STATIC_IP < /dev/tty
         if [ -z "$STATIC_IP" ]; then
             NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
             echo "No IP entered. Falling back to DHCP."
@@ -174,14 +183,14 @@ else
     echo -e "\n${YELLOW}Do you want to protect your files with a password?${NC}"
     echo "  [Y] Yes - Secure, requires a username and password to access files (Recommended)."
     echo "  [N] No  - Public, ANYONE on your Wi-Fi network can read/delete your files."
-    read -p "Choice (Y/n): " PASS_CHOICE
+    read -p "Choice (Y/n): " PASS_CHOICE < /dev/tty
 
     if [[ "$PASS_CHOICE" =~ ^[Nn]$ ]]; then
         SAMBA_MODE="guest"
         echo -e "${YELLOW}Samba will be configured for Public/Guest access.${NC}"
     else
         SAMBA_MODE="secure"
-        read -p "Enter a password for the Samba Share User (admin): " SAMBA_PASS
+        read -p "Enter a password for the Samba Share User (admin): " SAMBA_PASS < /dev/tty
     fi
     
     echo "Creating LXC Container $CTID..."
@@ -229,7 +238,7 @@ NEXT_MP=$((MAX_MP + 1))
 
 echo -e "\n${YELLOW}What do you want to name this shared folder on the network?${NC}"
 echo -e "Examples: Movies, Backup, Files, Disk_$NEXT_MP"
-read -p "Share Name [Default: Disk_$NEXT_MP]: " USER_SHARE_NAME
+read -p "Share Name [Default: Disk_$NEXT_MP]: " USER_SHARE_NAME < /dev/tty
 
 if [ -z "$USER_SHARE_NAME" ]; then
     SHARE_NAME="Disk_$NEXT_MP"
