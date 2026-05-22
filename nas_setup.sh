@@ -33,28 +33,23 @@ if [ -n "$OS_BASES" ]; then
 fi
 
 # Get a reliable array of safe disks/partitions
-# If a disk has partitions (e.g. sdb1), we hide the parent disk (sdb) to avoid confusion.
-# If a disk has NO partitions (e.g. sdc), we show the parent disk so it can be selected and formatted.
-mapfile -t DISK_PATHS < <(lsblk -o NAME,TYPE -p -n -l | grep -vE "$EXCLUDE_REGEX" | awk '
-{
-    devs[$1]=$2
-}
-END {
-    for (d in devs) {
-        if (devs[d] == "disk") {
-            has_part = 0
-            for (p in devs) {
-                if (devs[p] == "part" && index(p, d) == 1 && length(p) > length(d)) {
-                    has_part = 1
-                    break
-                }
-            }
-            if (has_part == 0) print d
-        } else if (devs[d] == "part" || devs[d] == "md") {
-            print d
-        }
-    }
-}' | sort)
+SAFE_DEVS=$(lsblk -o NAME,TYPE -p -n -l | grep -vE "$EXCLUDE_REGEX")
+
+mapfile -t DISK_PATHS < <(
+    echo "$SAFE_DEVS" | while read -r name type; do
+        if [ -z "$name" ]; then continue; fi
+        if [ "$type" == "disk" ]; then
+            # If the disk has children (e.g. sdb1), grep will find ^/dev/sdb[0-9]
+            # So we only print the disk if grep does NOT find any children
+            if ! echo "$SAFE_DEVS" | grep -qE "^${name}[0-9a-zA-Z]+"; then
+                echo "$name"
+            fi
+        else
+            # Always print partitions or other types (like md)
+            echo "$name"
+        fi
+    done | sort
+)
 
 if [ ${#DISK_PATHS[@]} -eq 0 ]; then
     echo -e "${RED}No available disks found (other than the system drive). Connect a drive and try again.${NC}"
