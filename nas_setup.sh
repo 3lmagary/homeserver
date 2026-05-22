@@ -147,7 +147,29 @@ else
     
     LOCAL_TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -n 1)
     
-    echo -e "${YELLOW}Do you want to protect your files with a password?${NC}"
+    echo -e "\n${YELLOW}Network Configuration for NAS:${NC}"
+    echo "  [1] DHCP (Automatic IP from Router)"
+    echo "  [2] Static IP (Recommended so the IP never changes)"
+    read -p "Choose [1 or 2, Default: 1]: " NET_CHOICE
+    
+    if [ "$NET_CHOICE" == "2" ]; then
+        GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
+        CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
+        if [ -z "$CIDR" ]; then CIDR="24"; fi
+        
+        echo -e "\nDetected Router/Gateway: $GW"
+        read -p "Enter the desired IP address for the NAS (e.g. 192.168.1.50): " STATIC_IP
+        if [ -z "$STATIC_IP" ]; then
+            NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
+            echo "No IP entered. Falling back to DHCP."
+        else
+            NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
+        fi
+    else
+        NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
+    fi
+
+    echo -e "\n${YELLOW}Do you want to protect your files with a password?${NC}"
     echo "  [Y] Yes - Secure, requires a username and password to access files (Recommended)."
     echo "  [N] No  - Public, ANYONE on your Wi-Fi network can read/delete your files."
     read -p "Choice (Y/n): " PASS_CHOICE
@@ -161,7 +183,7 @@ else
     fi
     
     echo "Creating LXC Container $CTID..."
-    pct create $CTID "$LOCAL_TEMPLATE" --hostname "$LXC_NAME" --net0 name=eth0,bridge=vmbr0,ip=dhcp --unprivileged 1 --features nesting=1
+    pct create $CTID "$LOCAL_TEMPLATE" --hostname "$LXC_NAME" --net0 $NET_CONFIG --unprivileged 1 --features nesting=1
     
     echo "Configuring NAS to start automatically on boot..."
     pct set $CTID -onboot 1
