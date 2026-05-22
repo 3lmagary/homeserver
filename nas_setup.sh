@@ -200,7 +200,17 @@ for MP in $(pct config $CTID | grep -o '^mp[0-9]*' | sed 's/mp//'); do
 done
 NEXT_MP=$((MAX_MP + 1))
 
-SHARE_NAME="Disk_$NEXT_MP"
+echo -e "\n${YELLOW}What do you want to name this shared folder on the network?${NC}"
+echo -e "Examples: Movies, Backup, Files, Disk_$NEXT_MP"
+read -p "Share Name [Default: Disk_$NEXT_MP]: " USER_SHARE_NAME
+
+if [ -z "$USER_SHARE_NAME" ]; then
+    SHARE_NAME="Disk_$NEXT_MP"
+else
+    # Replace spaces with underscores to avoid Samba share path issues
+    SHARE_NAME=$(echo "$USER_SHARE_NAME" | tr ' ' '_')
+fi
+
 LXC_MOUNT_POINT="/share/$SHARE_NAME"
 
 echo "Adding Bind Mount (mp$NEXT_MP: $MOUNT_DIR -> $LXC_MOUNT_POINT)..."
