@@ -43,42 +43,6 @@ bash <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup.
 
 ---
 
-### 2️⃣ AdGuard Home + Unbound (`adguard_unbound.sh`)
-The ultimate local DNS setup script. Designed specifically to run inside an LXC container to provide a blazing-fast, ad-blocking recursive DNS resolver.
-
-<details>
-<summary><b>✨ View Features</b></summary>
-
-- 🛑 **Port 53 Free-up:** Automatically detects and disables `systemd-resolved` conflicts.
-- ⚡ **Unbound:** Configured securely as a recursive caching resolver on port `5335`.
-- 🛡️ **AdGuard Home:** Installs the latest stable release.
-</details>
-
-**🚀 Run Command:**
-*(Run this inside your LXC container)*
-```bash
-bash <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/adguard_unbound.sh)
-```
-
-#### ⚙️ AdGuard Configuration
-
-Once the script finishes, complete the setup in your browser:
-
-1. Go to `http://<YOUR_LXC_IP>:3000`
-2. Follow the wizard (Web Interface: Port `80`, DNS Server: Port `53`).
-3. Navigate to **Settings ➔ DNS Settings** in the dashboard.
-4. Set **Upstream DNS servers** to:
-   ```text
-   127.0.0.1:5335
-   ```
-5. Set **Bootstrap DNS servers** to:
-   ```text
-   1.1.1.1
-   ```
-6. Click **Apply** and **Test upstreams**.
-
----
-
 ## 🤝 Contributing
 Feel free to fork this repository, submit Pull Requests, or open Issues to suggest improvements or new scripts!
 
