@@ -188,7 +188,15 @@ pct exec $CTID -- bash -c "echo 'couchdb couchdb/adminpass_again string $SYNC_PA
 pct exec $CTID -- bash -c "echo 'couchdb couchdb/erlang_magic_cookie string couchdb' | debconf-set-selections"
 pct exec $CTID -- bash -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y couchdb"
 
-pct exec $CTID -- bash -c "echo -e '\n[chttpd]\nbind_address = 0.0.0.0' >> /opt/couchdb/etc/local.ini"
+pct exec $CTID -- bash -c "cat <<EOF >> /opt/couchdb/etc/local.ini
+
+[chttpd]
+bind_address = 0.0.0.0
+
+[admins]
+admin = $SYNC_PASS
+EOF"
+pct exec $CTID -- bash -c "mkdir -p /opt/couchdb /etc/couchdb /var/lib/couchdb /var/log/couchdb /var/run/couchdb 2>/dev/null || true"
 pct exec $CTID -- bash -c "chown -R couchdb:couchdb /opt/couchdb /etc/couchdb /var/lib/couchdb /var/log/couchdb /var/run/couchdb 2>/dev/null || true"
 pct exec $CTID -- bash -c "systemctl restart couchdb"
 
