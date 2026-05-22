@@ -110,10 +110,7 @@ fi
 
 echo -e "\n${GREEN}[2/4] Preparing LXC Configuration...${NC}"
 
-SYNC_USER=${SUDO_USER:-admin}
-if [ "$SYNC_USER" == "root" ]; then SYNC_USER="admin"; fi
-
-read -p "Enter a password for user ($SYNC_USER) [Used for CouchDB & Syncthing]: " SYNC_PASS < /dev/tty
+read -p "Enter a password for the 'admin' user [Used for CouchDB & Syncthing]: " SYNC_PASS < /dev/tty
 if [ -z "$SYNC_PASS" ]; then
     echo -e "${RED}Password cannot be empty. Defaulting to 'admin'.${NC}"
     SYNC_PASS="admin"
@@ -203,14 +200,13 @@ pct exec $CTID -- bash -c "systemctl restart couchdb"
 echo "Waiting for CouchDB to start before configuring CORS..."
 sleep 5
 
-echo "Creating Custom Admin & Configuring CouchDB for Obsidian LiveSync..."
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/admins/${SYNC_USER} -d '\"${SYNC_PASS}\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/httpd/enable_cors -d '\"true\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/origins -d '\"*\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/credentials -d '\"true\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/methods -d '\"GET, PUT, POST, HEAD, DELETE\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/headers -d '\"accept, authorization, content-type, origin, referer, x-csrf-token\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://${SYNC_USER}:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/couchdb/max_document_size -d '\"50000000\"'"
+echo "Configuring CouchDB for Obsidian LiveSync..."
+pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/httpd/enable_cors -d '\"true\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/origins -d '\"*\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/credentials -d '\"true\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/methods -d '\"GET, PUT, POST, HEAD, DELETE\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/headers -d '\"accept, authorization, content-type, origin, referer, x-csrf-token\"'"
+pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/couchdb/max_document_size -d '\"50000000\"'"
 
 # SYNCTHING
 echo "Installing Syncthing..."
@@ -252,13 +248,13 @@ fi
 echo -e ""
 echo -e "${GREEN}2) CouchDB (Obsidian LiveSync)${NC}"
 echo -e "URL: ${YELLOW}http://$LXC_IP:5984/_utils/${NC}"
-echo -e "Username: $SYNC_USER"
+echo -e "Username: admin"
 echo -e "Password: $SYNC_PASS"
 echo -e ""
 echo -e "${YELLOW}To configure Obsidian:${NC}"
 echo -e " 1. Install 'Self-hosted LiveSync' plugin."
 echo -e " 2. In plugin settings, enter URI: http://$LXC_IP:5984"
-echo -e " 3. Username: $SYNC_USER / Password: $SYNC_PASS"
+echo -e " 3. Username: admin / Password: $SYNC_PASS"
 echo -e " 4. Database Name: obsidian"
 echo -e " 5. Click 'Test' and then 'Check Database'. It will create the DB automatically."
 echo -e "${BLUE}==========================================${NC}"
