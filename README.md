@@ -67,7 +67,7 @@ The ultimate, intelligent script to mount external hard drives (USB/SATA) and sh
 **🚀 Run Command:**
 *(Run from your Proxmox Host as a regular sudo user)*
 ```bash
-curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/nas_setup.sh | sudo bash
+sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/nas_setup.sh | sudo bash
 ```
 
 ---
