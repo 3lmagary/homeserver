@@ -20,6 +20,9 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+SMB_USER=${SUDO_USER:-admin}
+if [ "$SMB_USER" == "root" ]; then SMB_USER="admin"; fi
+
 # 1) DISK DETECTION & SELECTION
 echo -e "${GREEN}[1/5] Scanning for available drives...${NC}"
 
@@ -142,6 +145,7 @@ else
     fi
 fi
 
+systemctl daemon-reload
 mount -a || true
 if ! mountpoint -q "$MOUNT_DIR"; then
     echo -e "${RED}Failed to mount $SELECTED_DISK to $MOUNT_DIR.${NC}"
@@ -215,11 +219,14 @@ else
         echo -e "${YELLOW}Samba will be configured for Public/Guest access.${NC}"
     else
         SAMBA_MODE="secure"
-        read -p "Enter a password for the Samba Share User (admin): " SAMBA_PASS < /dev/tty
+        read -p "Enter a password for the Samba Share User ($SMB_USER): " SAMBA_PASS < /dev/tty
     fi
     
-    echo "Creating LXC Container $CTID..."
-    pct create $CTID "$LOCAL_TEMPLATE" --hostname "$LXC_NAME" --net0 $NET_CONFIG --unprivileged 1 --features nesting=1
+    TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
+    if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
+    
+    echo "Creating LXC Container $CTID on storage $TARGET_STORAGE..."
+    pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --hostname "$LXC_NAME" --net0 $NET_CONFIG --unprivileged 1 --features nesting=1
     
     echo "Configuring NAS to start automatically on boot..."
     pct set $CTID -onboot 1
@@ -235,8 +242,8 @@ else
     
     if [ "$SAMBA_MODE" == "secure" ]; then
         echo "Configuring secure Samba User..."
-        pct exec $CTID -- bash -c "useradd -m -s /bin/bash admin"
-        pct exec $CTID -- bash -c "echo -e \"$SAMBA_PASS\n$SAMBA_PASS\" | smbpasswd -a -s admin"
+        pct exec $CTID -- bash -c "useradd -m -s /bin/bash $SMB_USER"
+        pct exec $CTID -- bash -c "echo -e \"$SAMBA_PASS\n$SAMBA_PASS\" | smbpasswd -a -s $SMB_USER"
     else
         echo "Configuring public Samba Access..."
         pct exec $CTID -- bash -c "sed -i '/\[global\]/a \ \ \ \ map to guest = bad user' /etc/samba/smb.conf"
@@ -290,7 +297,7 @@ SMB_CONF="
    path = $LXC_MOUNT_POINT
    browseable = yes
    read only = no
-   valid users = admin
+   valid users = $SMB_USER
 "
 else
 SMB_CONF="
@@ -318,7 +325,7 @@ echo -e "The drive has been successfully added to your Samba NAS."
 echo -e "LXC Container ID : $CTID"
 echo -e "NAS IP Address   : ${YELLOW}$LXC_IP${NC}"
 if [ "$SAMBA_MODE" == "secure" ]; then
-    echo -e "Username         : admin"
+    echo -e "Username         : $SMB_USER"
 else
     echo -e "Mode             : Public (No Password)"
 fi
@@ -327,6 +334,6 @@ echo -e "To access your files from Windows:"
 echo -e "1. Open File Explorer"
 echo -e "2. In the address bar, type: ${YELLOW}\\\\$LXC_IP${NC}"
 if [ "$SAMBA_MODE" == "secure" ]; then
-    echo -e "3. Enter 'admin' and your password."
+    echo -e "3. Enter '$SMB_USER' and your password."
 fi
 echo -e "${BLUE}==========================================${NC}"
