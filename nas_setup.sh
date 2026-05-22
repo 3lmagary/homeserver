@@ -346,7 +346,7 @@ fi
 echo -e ""
 echo -e "To access your files from Windows:"
 echo -e "1. Open File Explorer"
-echo -e "2. In the address bar, type: ${YELLOW}\\\\$LXC_IP${NC}"
+printf "2. In the address bar, type: %b\\\\\\\\%s%b  (or smb://%s for Mac)\n" "${YELLOW}" "$LXC_IP" "${NC}" "$LXC_IP"
 if [ "$SAMBA_MODE" == "secure" ]; then
     echo -e "3. Enter '$SMB_USER' and your password."
 fi
