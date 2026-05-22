@@ -282,51 +282,56 @@ NEXT_MP=$((MAX_MP + 1))
 
 DEFAULT_SHARE_NAME=$(basename "$MOUNT_DIR")
 
-echo -e "\n${YELLOW}What do you want to name this shared folder on the network?${NC}"
-echo -e "Examples: Movies, Backup, Files, $DEFAULT_SHARE_NAME"
-read -p "Share Name [Default: $DEFAULT_SHARE_NAME]: " USER_SHARE_NAME < /dev/tty
-
-if [ -z "$USER_SHARE_NAME" ]; then
-    SHARE_NAME="$DEFAULT_SHARE_NAME"
+# Check if this directory is already mounted
+if pct config $CTID | grep -q "$MOUNT_DIR,mp="; then
+    echo -e "${YELLOW}Drive ($MOUNT_DIR) is already bound to LXC container $CTID. Skipping bind mount and Samba config.${NC}"
 else
-    # Replace spaces with underscores to avoid Samba share path issues
-    SHARE_NAME=$(echo "$USER_SHARE_NAME" | tr ' ' '_')
+    echo -e "\n${YELLOW}What do you want to name this shared folder on the network?${NC}"
+    echo -e "Examples: Movies, Backup, Files, $DEFAULT_SHARE_NAME"
+    read -p "Share Name [Default: $DEFAULT_SHARE_NAME]: " USER_SHARE_NAME < /dev/tty
+
+    if [ -z "$USER_SHARE_NAME" ]; then
+        SHARE_NAME="$DEFAULT_SHARE_NAME"
+    else
+        # Replace spaces with underscores to avoid Samba share path issues
+        SHARE_NAME=$(echo "$USER_SHARE_NAME" | tr ' ' '_')
+    fi
+
+    LXC_MOUNT_POINT="/share/$SHARE_NAME"
+
+    echo "Adding Bind Mount (mp$NEXT_MP: $MOUNT_DIR -> $LXC_MOUNT_POINT)..."
+    pct set $CTID -mp$NEXT_MP "$MOUNT_DIR,mp=$LXC_MOUNT_POINT"
+
+    echo "Applying permissions..."
+    if [ "$FS_TYPE" == "ext4" ]; then
+        # In unprivileged LXC, UID 1000 inside is 101000 on the host
+        chown -R 101000:101000 "$MOUNT_DIR"
+    fi
+
+    echo "Updating Samba Config inside LXC..."
+    if [ "$SAMBA_MODE" == "secure" ]; then
+    SMB_CONF="
+    [$SHARE_NAME]
+       path = $LXC_MOUNT_POINT
+       browseable = yes
+       read only = no
+       valid users = $SMB_USER
+    "
+    else
+    SMB_CONF="
+    [$SHARE_NAME]
+       path = $LXC_MOUNT_POINT
+       browseable = yes
+       read only = no
+       guest ok = yes
+       public = yes
+       force user = nobody
+    "
+    fi
+
+    pct exec $CTID -- bash -c "echo '$SMB_CONF' >> /etc/samba/smb.conf"
+    pct exec $CTID -- systemctl restart smbd
 fi
-
-LXC_MOUNT_POINT="/share/$SHARE_NAME"
-
-echo "Adding Bind Mount (mp$NEXT_MP: $MOUNT_DIR -> $LXC_MOUNT_POINT)..."
-pct set $CTID -mp$NEXT_MP "$MOUNT_DIR,mp=$LXC_MOUNT_POINT"
-
-echo "Applying permissions..."
-if [ "$FS_TYPE" == "ext4" ]; then
-    # In unprivileged LXC, UID 1000 inside is 101000 on the host
-    chown -R 101000:101000 "$MOUNT_DIR"
-fi
-
-echo "Updating Samba Config inside LXC..."
-if [ "$SAMBA_MODE" == "secure" ]; then
-SMB_CONF="
-[$SHARE_NAME]
-   path = $LXC_MOUNT_POINT
-   browseable = yes
-   read only = no
-   valid users = $SMB_USER
-"
-else
-SMB_CONF="
-[$SHARE_NAME]
-   path = $LXC_MOUNT_POINT
-   browseable = yes
-   read only = no
-   guest ok = yes
-   public = yes
-   force user = nobody
-"
-fi
-
-pct exec $CTID -- bash -c "echo '$SMB_CONF' >> /etc/samba/smb.conf"
-pct exec $CTID -- systemctl restart smbd
 
 # 6) FINISH
 echo -e "${GREEN}[5/5] Setup Complete!${NC}"
