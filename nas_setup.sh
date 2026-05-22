@@ -163,6 +163,9 @@ else
     echo "Creating LXC Container $CTID..."
     pct create $CTID "$LOCAL_TEMPLATE" --hostname "$LXC_NAME" --net0 name=eth0,bridge=vmbr0,ip=dhcp --unprivileged 1 --features nesting=1
     
+    echo "Configuring NAS to start automatically on boot..."
+    pct set $CTID -onboot 1
+    
     echo "Starting LXC $CTID..."
     pct start $CTID
     
