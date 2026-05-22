@@ -37,8 +37,37 @@ A foundational script for fresh Proxmox VE nodes. It handles repository manageme
 </details>
 
 **🚀 Run Command:**
+*(Run as root on a fresh Proxmox install)*
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup.sh)
+```
+
+---
+
+### 2️⃣ Expandable NAS Setup (`nas_setup.sh`)
+The ultimate, intelligent script to mount external hard drives (USB/SATA) and share them over the network (SMB/Samba) using a dynamically created, unprivileged LXC container.
+
+> **Note:** Since the first script logs you in as a normal user, **you must use `sudo`** to run this script so it can interact with the Proxmox storage and LXC commands.
+
+<details>
+<summary><b>✨ View Features</b></summary>
+
+- 💽 **Intelligent Disk Detection:** Scans for all connected hard drives and presents a numbered list (safely excluding your main Proxmox OS drive).
+- 🔄 **Smart Formatting Logic:** 
+  - If your drive is `ext4`, it proceeds seamlessly.
+  - If your drive is `NTFS` or `exFAT`, it warns you and gives you the option to wipe it to `ext4` for maximum server performance, or keep it as is (automatically installing `ntfs-3g` / `exfat-fuse`).
+- 📌 **Persistent Mounting:** Automatically extracts the UUID of your drive and adds it to `/etc/fstab` so it survives host reboots.
+- 🐳 **Expandable LXC Architecture:** 
+  - **First Run:** Creates a lightweight, unprivileged Debian 12 LXC container (`Samba-NAS`), installs Samba, and bind-mounts your drive securely.
+  - **Subsequent Runs:** If you plug in a 2nd or 3rd hard drive, the script is smart enough to realize the `Samba-NAS` container already exists. It will NOT create a new container. Instead, it mounts the new drive and injects it into your existing container as a new folder!
+- 🔐 **Security Choice:** Prompts you to either secure your share with a password (recommended) or create a public "Guest" share accessible to anyone on your network.
+- 🛡️ **Proper UID Mapping:** Automatically handles complex UID/GID mappings (`101000:101000`) for `ext4` drives inside unprivileged containers to ensure you have write permissions.
+</details>
+
+**🚀 Run Command:**
+*(Run from your Proxmox Host as a regular sudo user)*
+```bash
+curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/nas_setup.sh | sudo bash
 ```
 
 ---
