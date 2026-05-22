@@ -112,7 +112,7 @@ else
     done
 fi
 
-# 5) TERMINAL BEAUTIFICATION (Oh My Zsh + Plugins + Powerlevel10k)
+# 5) TERMINAL BEAUTIFICATION (Oh My Zsh + Plugins)
 echo -e "${GREEN}[5/7] Installing Zsh, Oh My Zsh & Plugins...${NC}"
 apt install -y zsh git
 
@@ -127,15 +127,12 @@ install_omz() {
     su - "$TARGET_USER" -c "git clone https://github.com/zsh-users/zsh-autosuggestions $HOME_DIR/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
     su - "$TARGET_USER" -c "git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $HOME_DIR/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
 
-    # Clone Powerlevel10k theme
-    su - "$TARGET_USER" -c "git clone --depth=1 https://github.com/romkatv/powerlevel10k.git $HOME_DIR/.oh-my-zsh/custom/themes/powerlevel10k"
-
-    # Enable plugins and set theme to powerlevel10k
+    # Enable plugins and set theme to robbyrussell
     su - "$TARGET_USER" -c "sed -i 's/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/' $HOME_DIR/.zshrc"
-    su - "$TARGET_USER" -c "sed -i 's/ZSH_THEME=\"robbyrussell\"/ZSH_THEME=\"powerlevel10k\/powerlevel10k\"/' $HOME_DIR/.zshrc"
     
-    # Disable original theme if it was set to agnoster in a previous run
-    su - "$TARGET_USER" -c "sed -i 's/ZSH_THEME=\"agnoster\"/ZSH_THEME=\"powerlevel10k\/powerlevel10k\"/' $HOME_DIR/.zshrc"
+    # Ensure robbyrussell is set in case of a rerun
+    su - "$TARGET_USER" -c "sed -i 's/ZSH_THEME=\"powerlevel10k\/powerlevel10k\"/ZSH_THEME=\"robbyrussell\"/' $HOME_DIR/.zshrc"
+    su - "$TARGET_USER" -c "sed -i 's/ZSH_THEME=\"agnoster\"/ZSH_THEME=\"robbyrussell\"/' $HOME_DIR/.zshrc"
 }
 
 # Run installation for created user and root
