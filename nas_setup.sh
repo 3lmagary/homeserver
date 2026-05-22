@@ -32,8 +32,29 @@ if [ -n "$OS_BASES" ]; then
     EXCLUDE_REGEX="$EXCLUDE_REGEX|^($OS_BASES)"
 fi
 
-# Get a reliable array of safe disks
-mapfile -t DISK_PATHS < <(lsblk -o NAME -p -n -l | grep -vE "$EXCLUDE_REGEX")
+# Get a reliable array of safe disks/partitions
+# If a disk has partitions (e.g. sdb1), we hide the parent disk (sdb) to avoid confusion.
+# If a disk has NO partitions (e.g. sdc), we show the parent disk so it can be selected and formatted.
+mapfile -t DISK_PATHS < <(lsblk -o NAME,TYPE -p -n -l | grep -vE "$EXCLUDE_REGEX" | awk '
+{
+    devs[$1]=$2
+}
+END {
+    for (d in devs) {
+        if (devs[d] == "disk") {
+            has_part = 0
+            for (p in devs) {
+                if (devs[p] == "part" && index(p, d) == 1 && length(p) > length(d)) {
+                    has_part = 1
+                    break
+                }
+            }
+            if (has_part == 0) print d
+        } else if (devs[d] == "part" || devs[d] == "md") {
+            print d
+        }
+    }
+}' | sort)
 
 if [ ${#DISK_PATHS[@]} -eq 0 ]; then
     echo -e "${RED}No available disks found (other than the system drive). Connect a drive and try again.${NC}"
