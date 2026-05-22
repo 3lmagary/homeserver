@@ -128,13 +128,26 @@ if [ -z "$UUID" ]; then
     exit 1
 fi
 
-MOUNT_DIR="/mnt/nas_disk_$UUID"
-mkdir -p "$MOUNT_DIR"
-
 # Check if already in fstab
-if grep -q "$UUID" /etc/fstab; then
-    echo -e "${YELLOW}Drive already exists in /etc/fstab.${NC}"
+EXISTING_MOUNT=$(awk -v uuid="$UUID" '$1=="UUID="uuid {print $2}' /etc/fstab)
+
+if [ -n "$EXISTING_MOUNT" ]; then
+    MOUNT_DIR="$EXISTING_MOUNT"
+    echo -e "${YELLOW}Drive already exists in /etc/fstab at $MOUNT_DIR.${NC}"
 else
+    echo -e "\n${YELLOW}What do you want to name this Drive? (This will be its folder name on the server)${NC}"
+    echo -e "Examples: Movies, Backup, Disk1"
+    read -p "Drive Name [Default: Disk_$((RANDOM % 1000))]: " DRIVE_NAME < /dev/tty
+    
+    if [ -z "$DRIVE_NAME" ]; then
+        DRIVE_NAME="Disk_$((RANDOM % 1000))"
+    else
+        DRIVE_NAME=$(echo "$DRIVE_NAME" | tr ' ' '_')
+    fi
+    
+    MOUNT_DIR="/mnt/$DRIVE_NAME"
+    mkdir -p "$MOUNT_DIR"
+    
     echo "Adding drive to /etc/fstab for persistent mounting..."
     if [ "$FS_TYPE" == "ntfs" ]; then
         echo "UUID=$UUID $MOUNT_DIR ntfs-3g defaults,uid=1000,gid=1000,dmask=022,fmask=133 0 0" >> /etc/fstab
@@ -143,9 +156,8 @@ else
     else
         echo "UUID=$UUID $MOUNT_DIR auto defaults 0 0" >> /etc/fstab
     fi
+    systemctl daemon-reload
 fi
-
-systemctl daemon-reload
 mount -a || true
 if ! mountpoint -q "$MOUNT_DIR"; then
     echo -e "${RED}Failed to mount $SELECTED_DISK to $MOUNT_DIR.${NC}"
@@ -268,12 +280,14 @@ for MP in $(pct config $CTID | grep -o '^mp[0-9]*' | sed 's/mp//'); do
 done
 NEXT_MP=$((MAX_MP + 1))
 
+DEFAULT_SHARE_NAME=$(basename "$MOUNT_DIR")
+
 echo -e "\n${YELLOW}What do you want to name this shared folder on the network?${NC}"
-echo -e "Examples: Movies, Backup, Files, Disk_$NEXT_MP"
-read -p "Share Name [Default: Disk_$NEXT_MP]: " USER_SHARE_NAME < /dev/tty
+echo -e "Examples: Movies, Backup, Files, $DEFAULT_SHARE_NAME"
+read -p "Share Name [Default: $DEFAULT_SHARE_NAME]: " USER_SHARE_NAME < /dev/tty
 
 if [ -z "$USER_SHARE_NAME" ]; then
-    SHARE_NAME="Disk_$NEXT_MP"
+    SHARE_NAME="$DEFAULT_SHARE_NAME"
 else
     # Replace spaces with underscores to avoid Samba share path issues
     SHARE_NAME=$(echo "$USER_SHARE_NAME" | tr ' ' '_')
