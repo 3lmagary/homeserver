@@ -23,8 +23,17 @@ fi
 # 1) DISK DETECTION & SELECTION
 echo -e "${GREEN}[1/5] Scanning for available drives...${NC}"
 
-# Get a reliable array of disks (just NAME)
-mapfile -t DISK_PATHS < <(lsblk -o NAME -p -n -l | grep -vE "^/dev/pve|^/dev/mapper|swap|LVM2_member|sr0")
+# Find OS underlying disks (anything mounted at /, /boot, or part of LVM)
+OS_BASES=$(lsblk -p -n -l -o NAME,FSTYPE,MOUNTPOINT | awk '$2=="LVM2_member" || $3=="/" || $3=="/boot" || $3=="/boot/efi" {print $1}' | sed -E 's/[0-9]+$//' | sort -u | paste -sd '|' -)
+
+EXCLUDE_REGEX="^/dev/loop|^/dev/sr|^/dev/mapper|^/dev/pve|swap"
+if [ -n "$OS_BASES" ]; then
+    # This will exclude the entire physical OS disk and ALL its partitions (e.g. /dev/sda, /dev/sda1, etc)
+    EXCLUDE_REGEX="$EXCLUDE_REGEX|^($OS_BASES)"
+fi
+
+# Get a reliable array of safe disks
+mapfile -t DISK_PATHS < <(lsblk -o NAME -p -n -l | grep -vE "$EXCLUDE_REGEX")
 
 if [ ${#DISK_PATHS[@]} -eq 0 ]; then
     echo -e "${RED}No available disks found (other than the system drive). Connect a drive and try again.${NC}"
