@@ -112,8 +112,8 @@ else
     done
 fi
 
-# 5) TERMINAL BEAUTIFICATION (Oh My Zsh + Plugins)
-echo -e "${GREEN}[5/6] Installing Zsh, Oh My Zsh & Plugins...${NC}"
+# 5) TERMINAL BEAUTIFICATION (Oh My Zsh + Plugins + Powerlevel10k)
+echo -e "${GREEN}[5/7] Installing Zsh, Oh My Zsh & Plugins...${NC}"
 apt install -y zsh git
 
 install_omz() {
@@ -127,9 +127,15 @@ install_omz() {
     su - "$TARGET_USER" -c "git clone https://github.com/zsh-users/zsh-autosuggestions $HOME_DIR/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
     su - "$TARGET_USER" -c "git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $HOME_DIR/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
 
-    # Enable plugins and set theme to agnoster
+    # Clone Powerlevel10k theme
+    su - "$TARGET_USER" -c "git clone --depth=1 https://github.com/romkatv/powerlevel10k.git $HOME_DIR/.oh-my-zsh/custom/themes/powerlevel10k"
+
+    # Enable plugins and set theme to powerlevel10k
     su - "$TARGET_USER" -c "sed -i 's/plugins=(git)/plugins=(git zsh-autosuggestions zsh-syntax-highlighting)/' $HOME_DIR/.zshrc"
-    su - "$TARGET_USER" -c "sed -i 's/ZSH_THEME=\"robbyrussell\"/ZSH_THEME=\"agnoster\"/' $HOME_DIR/.zshrc"
+    su - "$TARGET_USER" -c "sed -i 's/ZSH_THEME=\"robbyrussell\"/ZSH_THEME=\"powerlevel10k\/powerlevel10k\"/' $HOME_DIR/.zshrc"
+    
+    # Disable original theme if it was set to agnoster in a previous run
+    su - "$TARGET_USER" -c "sed -i 's/ZSH_THEME=\"agnoster\"/ZSH_THEME=\"powerlevel10k\/powerlevel10k\"/' $HOME_DIR/.zshrc"
 }
 
 # Run installation for created user and root
@@ -139,8 +145,18 @@ install_omz "root" "/root"
 chsh -s $(which zsh) "$USERNAME" || true
 chsh -s $(which zsh) root || true
 
-# 6) CLEANUP
-echo -e "${GREEN}[6/6] Cleaning system...${NC}"
+# 6) AUTO-LOGIN SETUP
+echo -e "${GREEN}[6/7] Configuring auto-login for $USERNAME...${NC}"
+mkdir -p /etc/systemd/system/getty@tty1.service.d/
+cat <<EOF > /etc/systemd/system/getty@tty1.service.d/override.conf
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin $USERNAME --noclear %I \$TERM
+EOF
+systemctl daemon-reload || true
+
+# 7) CLEANUP
+echo -e "${GREEN}[7/7] Cleaning system...${NC}"
 apt autoremove -y
 apt clean
 
@@ -148,4 +164,5 @@ echo -e "${BLUE}=============================="
 echo -e " SETUP COMPLETE SAFE MODE"
 echo -e "==============================${NC}"
 
-echo "Login with: su - $USERNAME"
+echo "User '$USERNAME' will automatically log in on the local console."
+echo "If using SSH, login with: su - $USERNAME"
