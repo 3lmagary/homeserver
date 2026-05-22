@@ -61,7 +61,7 @@ lsb-release
 # 4) CREATE USER
 echo -e "${GREEN}[4/6] Creating user...${NC}"
 
-EXISTING_USER=$(awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' /etc/passwd | head -n 1)
+EXISTING_USER=$(awk -F: '$3 >= 1000 && $3 < 65534 && $6 ~ /^\/home\// && $7 !~ /nologin|false/ {print $1}' /etc/passwd | head -n 1)
 
 if [ -n "$EXISTING_USER" ]; then
     echo -e "${YELLOW}Existing user found: '$EXISTING_USER'. Skipping new user creation.${NC}"
