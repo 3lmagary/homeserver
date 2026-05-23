@@ -7,6 +7,7 @@
 
 GREEN="\033[0;32m"
 BLUE="\033[0;34m"
+YELLOW="\033[1;33m"
 RED="\033[0;31m"
 NC="\033[0m"
 
@@ -78,7 +79,7 @@ if [ -n "$EXISTING_USER" ]; then
     USERNAME="$EXISTING_USER"
 else
     while true; do
-        read -p "Enter username (e.g. john): " USERNAME
+        read -p "Enter username (e.g. john): " USERNAME < /dev/tty
 
         if [ -z "$USERNAME" ]; then
             echo -e "${RED}Username cannot be empty. Please try again.${NC}"
@@ -101,7 +102,7 @@ else
             break
         else
             echo -e "${RED}Error: Invalid username format (e.g., starts with a number).${NC}"
-            read -p "Do you want to force adding this username anyway? (y/N): " FORCE
+            read -p "Do you want to force adding this username anyway? (y/N): " FORCE < /dev/tty
             if [[ "$FORCE" =~ ^[Yy]$ ]]; then
                 set +e
                 adduser --allow-bad-names "$USERNAME"
@@ -158,8 +159,11 @@ install_omz() {
 install_omz "$USERNAME" "/home/$USERNAME"
 install_omz "root" "/root"
 
-chsh -s $(which zsh) "$USERNAME" || true
-chsh -s $(which zsh) root || true
+ZSH_PATH=$(which zsh 2>/dev/null || true)
+if [ -n "$ZSH_PATH" ]; then
+    chsh -s "$ZSH_PATH" "$USERNAME" || true
+    chsh -s "$ZSH_PATH" root || true
+fi
 
 # 6) AUTO-LOGIN SETUP
 echo -e "${GREEN}[6/7] Configuring auto-login for $USERNAME...${NC}"
@@ -174,7 +178,7 @@ systemctl daemon-reload || true
 
 # For Proxmox Web GUI Shell (which always defaults to root)
 # We append a switch command to root's .zshrc so it drops into the user automatically
-if ! grep -q "su - $USERNAME" /root/.zshrc; then
+if ! grep -qF "su - $USERNAME" /root/.zshrc; then
     echo -e "\n# Auto-switch to user in Proxmox Web Shell" >> /root/.zshrc
     echo "if [ \"\$EUID\" -eq 0 ] && [ -z \"\$SSH_CLIENT\" ]; then" >> /root/.zshrc
     echo "    echo -e \"\e[33m[Proxmox Web Shell] Auto-switching to user: $USERNAME...\e[0m\"" >> /root/.zshrc

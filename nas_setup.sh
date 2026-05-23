@@ -20,8 +20,12 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-SMB_USER=${SUDO_USER:-admin}
-if [ "$SMB_USER" == "root" ]; then SMB_USER="admin"; fi
+# Detect the current non-root sudo user, or fall back to searching /etc/passwd
+SMB_USER="${SUDO_USER:-}"
+if [ -z "$SMB_USER" ] || [ "$SMB_USER" == "root" ]; then
+    SMB_USER=$(awk -F: '$3>=1000 && $3<65534 && $7~/bash|zsh|sh/ {print $1; exit}' /etc/passwd)
+fi
+if [ -z "$SMB_USER" ]; then SMB_USER="admin"; fi
 
 # 1) DISK DETECTION & SELECTION
 echo -e "${GREEN}[1/5] Scanning for available drives...${NC}"
@@ -129,7 +133,7 @@ if [ -z "$UUID" ]; then
 fi
 
 # Check if already in fstab
-EXISTING_MOUNT=$(awk -v uuid="$UUID" '$1=="UUID="uuid {print $2}' /etc/fstab)
+EXISTING_MOUNT=$(grep "UUID=$UUID" /etc/fstab | awk '{print $2}')
 
 if [ -n "$EXISTING_MOUNT" ]; then
     MOUNT_DIR="$EXISTING_MOUNT"
@@ -231,7 +235,8 @@ else
         echo -e "${YELLOW}Samba will be configured for Public/Guest access.${NC}"
     else
         SAMBA_MODE="secure"
-        read -p "Enter a password for the Samba Share User ($SMB_USER): " SAMBA_PASS < /dev/tty
+        read -sp "Enter a password for the Samba Share User ($SMB_USER): " SAMBA_PASS < /dev/tty
+        echo
     fi
     
     TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
@@ -247,7 +252,7 @@ else
     pct start $CTID
     
     echo "Waiting for network..."
-    sleep 10
+    sleep 15
     
     echo "Installing Samba inside LXC..."
     pct exec $CTID -- bash -c "apt-get update && apt-get install -y samba"
@@ -302,7 +307,7 @@ else
     echo "Adding Bind Mount (mp$NEXT_MP: $MOUNT_DIR -> $LXC_MOUNT_POINT)..."
     pct set $CTID -mp$NEXT_MP "$MOUNT_DIR,mp=$LXC_MOUNT_POINT"
 
-    echo "Applying permissions..."
+    echo "Applying permissions (this may take several minutes for large drives)..."
     if [ "$FS_TYPE" == "ext4" ]; then
         # In unprivileged LXC, UID 1000 inside is 101000 on the host
         chown -R 101000:101000 "$MOUNT_DIR"
