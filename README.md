@@ -109,6 +109,32 @@ sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup_co
 
 ---
 
+### 4️⃣ AdGuard Home + Unbound DNS (`adguard_unbound.sh`)
+
+A highly optimized script that deploys **AdGuard Home** (Network-wide ad blocker) and **Unbound** (Recursive DNS resolver) inside a dedicated LXC container to provide fast, private, and ad-free internet for your entire home.
+
+<details>
+<summary><b>✨ View Features</b></summary>
+
+- 🛡️ **AdGuard Home:** Beautiful, powerful network-wide ad and tracker blocking.
+- 🌍 **Unbound DNS:** Acts as your own root DNS resolver. No more sending DNS queries to Google or Cloudflare; Unbound queries the root servers directly for maximum privacy.
+- ⚡ **Optimized Caching:** Pre-configured Unbound settings for aggressive caching (improving DNS speed) and DNSSEC validation (improving security).
+- 🧩 **Perfect Integration:** Automatically sets Unbound as the upstream DNS server for AdGuard Home.
+- 🛑 **Port Conflict Fixes:** Intelligently disables `systemd-resolved` to prevent port 53 conflicts during setup.
+- 🌐 **Static IP Enforcement:** Ensures your DNS server has a static IP address, which is mandatory for reliable network operation.
+- 🔐 **LXC Native:** Runs directly on Debian 12 LXC (no Docker overhead) for maximum performance and minimum latency.
+</details>
+
+**🚀 Run Command:**
+*(Run from your Proxmox Host as root)*
+```bash
+bash <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/adguard_unbound.sh)
+```
+
+
+
+---
+
 ## 🤝 Contributing
 
 Feel free to fork this repository, submit Pull Requests, or open Issues to suggest improvements or new scripts!

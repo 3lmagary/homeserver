@@ -108,7 +108,6 @@ services:
     environment:
       - WEBSOCKET_ENABLED=true
       - ADMIN_TOKEN=\${VW_ADMIN_TOKEN}
-      - I_REALLY_WANT_VOLATILE_STORAGE=true
     volumes:
       - ./vaultwarden:/vw-data
 
