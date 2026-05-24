@@ -82,6 +82,33 @@ sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/nas_setu
 
 ---
 
+### 3️⃣ Core Services Setup (`setup_core.sh`)
+
+A powerful script to instantly spin up a dedicated unprivileged LXC container tailored for essential home server services using Docker.
+
+<details>
+<summary><b>✨ View Features</b></summary>
+
+- 🚀 **Automated LXC Creation:** Deploys a Debian 12 unprivileged container optimized for Docker (`nesting=1`, `keyctl=1`).
+- ⚙️ **Performance Tuned:** Automatically assigns 2 CPU Cores and 1GB RAM (with 0 swap) for smooth operation of multiple services.
+- 🕒 **Timezone Sync:** Syncs the container timezone with the Proxmox host to ensure logs and scheduled updates are accurate.
+- 🔐 **Secure Setup:** Prompts for a custom root password for the container to ensure secure local access.
+- 🐳 **Instant Docker Stack:** Pre-configures and launches a complete Docker compose stack with:
+  - **Nginx Proxy Manager** (Reverse proxy & SSL)
+  - **Homepage** (Beautiful custom dashboard)
+  - **Portainer** (Visual Docker management)
+  - **Vaultwarden** (Self-hosted password manager)
+  - **Watchtower** (Automated container updates)
+</details>
+
+**🚀 Run Command:**
+*(Run from your Proxmox Host as a regular sudo user)*
+```bash
+sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup_core.sh | sudo bash
+```
+
+---
+
 ## 🤝 Contributing
 
 Feel free to fork this repository, submit Pull Requests, or open Issues to suggest improvements or new scripts!
