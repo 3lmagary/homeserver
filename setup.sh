@@ -179,11 +179,16 @@ systemctl daemon-reload || true
 # For Proxmox Web GUI Shell (which always defaults to root)
 # We append a switch command to root's .zshrc so it drops into the user automatically
 if ! grep -qF "su - $USERNAME" /root/.zshrc; then
-    echo -e "\n# Auto-switch to user in Proxmox Web Shell" >> /root/.zshrc
-    echo "if [ \"\$EUID\" -eq 0 ] && [ -z \"\$SSH_CLIENT\" ]; then" >> /root/.zshrc
+    echo -e "\n# Auto-switch to user in Proxmox Web Shell (only on initial login)" >> /root/.zshrc
+    echo "if [ \"\$EUID\" -eq 0 ] && [ -z \"\$SSH_CLIENT\" ] && [ \"\$(ps -p \$PPID -o comm=)\" = \"login\" ]; then" >> /root/.zshrc
     echo "    echo -e \"\e[33m[Proxmox Web Shell] Auto-switching to user: $USERNAME...\e[0m\"" >> /root/.zshrc
     echo "    su - $USERNAME" >> /root/.zshrc
     echo "fi" >> /root/.zshrc
+fi
+
+if ! grep -q "alias root=" "/home/$USERNAME/.zshrc"; then
+    echo -e "\n# Quick switch to root" >> "/home/$USERNAME/.zshrc"
+    echo "alias root='sudo -i'" >> "/home/$USERNAME/.zshrc"
 fi
 
 # 7) CLEANUP
@@ -197,3 +202,4 @@ echo -e "==============================${NC}"
 
 echo "User '$USERNAME' will automatically log in on the local console."
 echo "If using SSH, login with: su - $USERNAME"
+echo -e "${YELLOW}💡 TIP: To switch back to root for important commands, simply type: root${NC}"
