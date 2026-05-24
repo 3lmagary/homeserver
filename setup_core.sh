@@ -76,7 +76,6 @@ pct exec $CTID -- mkdir -p /opt/core
 # Write .env file with secrets
 pct exec $CTID -- bash -c "cat > /opt/core/.env << EOF
 VW_ADMIN_TOKEN=$VW_ADMIN_PASS
-DOMAIN=http://${STATIC_IP}
 EOF"
 
 # Write docker-compose.yml
@@ -102,7 +101,6 @@ services:
       - '8080:80'
     environment:
       - WEBSOCKET_ENABLED=true
-      - DOMAIN=http://${STATIC_IP}:8080
       - ADMIN_TOKEN=\${VW_ADMIN_TOKEN}
     volumes:
       - ./vaultwarden:/vw-data
