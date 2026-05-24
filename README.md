@@ -126,9 +126,9 @@ A highly optimized script that deploys **AdGuard Home** (Network-wide ad blocker
 </details>
 
 **🚀 Run Command:**
-*(Run from your Proxmox Host as root)*
+*(Run from your Proxmox Host as a regular sudo user)*
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/adguard_unbound.sh)
+sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/adguard_unbound.sh | sudo bash
 ```
 
 
