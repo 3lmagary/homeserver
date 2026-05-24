@@ -52,6 +52,12 @@ if [ -z "$DISK_SIZE" ]; then DISK_SIZE="10"; fi
 read -sp "Enter a password for the Container root user: " CT_ROOT_PASS < /dev/tty; echo
 if [ -z "$CT_ROOT_PASS" ]; then echo -e "${RED}Container password cannot be empty.${NC}"; exit 1; fi
 
+read -p "Enable Telegram notifications for updates? (y/n): " ENABLE_TG < /dev/tty
+if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
+    read -p "Enter Telegram Bot Token: " TG_TOKEN < /dev/tty
+    read -p "Enter Telegram Chat ID: " TG_CHAT_ID < /dev/tty
+fi
+
 NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
 TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
 if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
@@ -137,6 +143,10 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 12 * * *
       - DOCKER_API_VERSION=1.40
+$(if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
+echo "      - WATCHTOWER_NOTIFICATIONS=shoutrrr"
+echo "      - WATCHTOWER_NOTIFICATION_URL=telegram://$TG_TOKEN@telegram/?channels=$TG_CHAT_ID"
+fi)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 EOF
