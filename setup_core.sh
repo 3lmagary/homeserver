@@ -112,6 +112,8 @@ services:
     restart: unless-stopped
     ports:
       - '3000:3000'
+    environment:
+      - HOMEPAGE_ALLOWED_HOSTS=*
     volumes:
       - ./homepage:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
