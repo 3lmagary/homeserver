@@ -82,14 +82,14 @@ pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
 echo -e "${GREEN}[3/4] Writing Docker Compose config...${NC}"
 pct exec $CTID -- mkdir -p /opt/core
 
-# Generate Argon2id hash and write .env entirely inside the container
-# This avoids $ escaping issues — the hash never passes through the host shell
+# Generate Argon2id hash and write to a dedicated env file inside the container
+# Single quotes around the value prevent Docker Compose from interpreting $ signs
 echo -e "${GREEN}Generating Vaultwarden admin password hash...${NC}"
 SALT=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
 if ! pct exec $CTID -- env VW_PASS="$VW_ADMIN_PASS" VW_SALT="$SALT" bash -c '
 VW_HASH=$(echo -n "$VW_PASS" | argon2 "$VW_SALT" -e -id -k 65540 -t 3 -p 4)
 if [ -z "$VW_HASH" ]; then exit 1; fi
-echo "VW_ADMIN_TOKEN=$VW_HASH" > /opt/core/.env
+echo "ADMIN_TOKEN='"'"'$VW_HASH'"'"'" > /opt/core/.env.vaultwarden
 '; then
     echo -e "${RED}Error: Failed to generate Vaultwarden admin password hash.${NC}"
     exit 1
@@ -116,8 +116,8 @@ services:
     restart: unless-stopped
     ports:
       - '8080:80'
-    environment:
-      - ADMIN_TOKEN=\${VW_ADMIN_TOKEN}
+    env_file:
+      - .env.vaultwarden
     volumes:
       - ./vaultwarden:/vw-data
 
