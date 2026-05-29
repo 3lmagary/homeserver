@@ -92,8 +92,9 @@ if [ -z "$VW_ADMIN_HASH" ]; then
     exit 1
 fi
 
-# Escape dollar signs for Docker Compose interpolation (e.g. $argon2id$ -> $$argon2id$$)
-VW_ADMIN_HASH_ESCAPED=$(echo "$VW_ADMIN_HASH" | sed 's/\$/\$\$/g')
+# Write the raw hash directly to a file to avoid Docker Compose interpolation warnings ($ variables)
+pct exec $CTID -- mkdir -p /opt/core/vaultwarden
+pct exec $CTID -- bash -c "echo -n '$VW_ADMIN_HASH' > /opt/core/vaultwarden/admin_token.txt"
 
 # Write docker-compose.yml
 cat << EOF | pct exec $CTID -- tee /opt/core/docker-compose.yml >/dev/null
@@ -117,7 +118,7 @@ services:
     ports:
       - '8080:80'
     environment:
-      - ADMIN_TOKEN=${VW_ADMIN_HASH_ESCAPED}
+      - ADMIN_TOKEN_FILE=/data/admin_token.txt
     volumes:
       - ./vaultwarden:/data
 
