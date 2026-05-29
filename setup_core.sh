@@ -72,16 +72,17 @@ pct start $CTID
 echo "Waiting for network..."
 sleep 15
 
-echo -e "${GREEN}[2/4] Installing Docker...${NC}"
-pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certificates"
+echo -e "${GREEN}[2/4] Installing Docker and Utilities...${NC}"
+pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certificates argon2"
 pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
 
 echo -e "${GREEN}[3/4] Writing Docker Compose config...${NC}"
 pct exec $CTID -- mkdir -p /opt/core
 
-# Generate secure Argon2id hash for Vaultwarden ADMIN_TOKEN using docker inside the container
+# Generate secure Argon2id hash for Vaultwarden ADMIN_TOKEN using local argon2 inside the container
 echo -e "${GREEN}Generating Vaultwarden admin password hash...${NC}"
-VW_ADMIN_HASH=$(pct exec $CTID -- bash -c "printf '%s\n%s\n' '$VW_ADMIN_PASS' '$VW_ADMIN_PASS' | docker run --rm -i vaultwarden/server:latest /vaultwarden hash --preset owasp" | grep -o '\$argon2id\$.*' | tr -d '\r' | sed 's/\$/\$\$/g')
+SALT=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
+VW_ADMIN_HASH=$(pct exec $CTID -- env VW_PASS="$VW_ADMIN_PASS" VW_SALT="$SALT" bash -c 'echo -n "$VW_PASS" | argon2 "$VW_SALT" -e -id -k 65540 -t 3 -p 4' | grep -o '\$argon2id\$.*' | tr -d '\r' | sed 's/\$/\$\$/g')
 
 if [ -z "$VW_ADMIN_HASH" ]; then
     echo -e "${RED}Error: Failed to generate Vaultwarden admin password hash.${NC}"
