@@ -48,6 +48,7 @@ if [ -z "$VW_ADMIN_PASS" ]; then echo -e "${RED}Vaultwarden password cannot be e
 
 read -p "Enter Disk Size in GB (default: 10): " DISK_SIZE < /dev/tty
 if [ -z "$DISK_SIZE" ]; then DISK_SIZE="10"; fi
+if ! [[ "$DISK_SIZE" =~ ^[0-9]+$ ]]; then echo -e "${RED}Disk size must be a number.${NC}"; exit 1; fi
 
 read -sp "Enter a password for the Container root user: " CT_ROOT_PASS < /dev/tty; echo
 if [ -z "$CT_ROOT_PASS" ]; then echo -e "${RED}Container password cannot be empty.${NC}"; exit 1; fi
@@ -55,7 +56,9 @@ if [ -z "$CT_ROOT_PASS" ]; then echo -e "${RED}Container password cannot be empt
 read -p "Enable Telegram notifications for updates? (y/n): " ENABLE_TG < /dev/tty
 if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
     read -p "Enter Telegram Bot Token: " TG_TOKEN < /dev/tty
+    if [ -z "$TG_TOKEN" ]; then echo -e "${RED}Telegram Bot Token cannot be empty.${NC}"; exit 1; fi
     read -p "Enter Telegram Chat ID: " TG_CHAT_ID < /dev/tty
+    if [ -z "$TG_CHAT_ID" ]; then echo -e "${RED}Telegram Chat ID cannot be empty.${NC}"; exit 1; fi
 fi
 
 NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
@@ -79,20 +82,18 @@ pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
 echo -e "${GREEN}[3/4] Writing Docker Compose config...${NC}"
 pct exec $CTID -- mkdir -p /opt/core
 
-# Generate secure Argon2id hash for Vaultwarden ADMIN_TOKEN using local argon2 inside the container
+# Generate Argon2id hash and write .env entirely inside the container
+# This avoids $ escaping issues — the hash never passes through the host shell
 echo -e "${GREEN}Generating Vaultwarden admin password hash...${NC}"
 SALT=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
-VW_ADMIN_HASH=$(pct exec $CTID -- env VW_PASS="$VW_ADMIN_PASS" VW_SALT="$SALT" bash -c 'echo -n "$VW_PASS" | argon2 "$VW_SALT" -e -id -k 65540 -t 3 -p 4' | grep -o '\$argon2id\$.*' | tr -d '\r' | sed 's/\$/\$\$/g')
-
-if [ -z "$VW_ADMIN_HASH" ]; then
+if ! pct exec $CTID -- env VW_PASS="$VW_ADMIN_PASS" VW_SALT="$SALT" bash -c '
+VW_HASH=$(echo -n "$VW_PASS" | argon2 "$VW_SALT" -e -id -k 65540 -t 3 -p 4)
+if [ -z "$VW_HASH" ]; then exit 1; fi
+echo "VW_ADMIN_TOKEN=$VW_HASH" > /opt/core/.env
+'; then
     echo -e "${RED}Error: Failed to generate Vaultwarden admin password hash.${NC}"
     exit 1
 fi
-
-# Write .env file with secrets
-pct exec $CTID -- bash -c "cat > /opt/core/.env << EOF
-VW_ADMIN_TOKEN=$VW_ADMIN_HASH
-EOF"
 
 # Write docker-compose.yml
 cat << EOF | pct exec $CTID -- tee /opt/core/docker-compose.yml >/dev/null
@@ -116,7 +117,6 @@ services:
     ports:
       - '8080:80'
     environment:
-      - WEBSOCKET_ENABLED=true
       - ADMIN_TOKEN=\${VW_ADMIN_TOKEN}
     volumes:
       - ./vaultwarden:/vw-data
