@@ -119,7 +119,7 @@ services:
     environment:
       - ADMIN_TOKEN=${VW_ADMIN_HASH_ESCAPED}
     volumes:
-      - ./vaultwarden:/vw-data
+      - ./vaultwarden:/data
 
   homepage:
     image: ghcr.io/gethomepage/homepage:latest
