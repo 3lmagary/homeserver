@@ -79,9 +79,18 @@ pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
 echo -e "${GREEN}[3/4] Writing Docker Compose config...${NC}"
 pct exec $CTID -- mkdir -p /opt/core
 
+# Generate secure Argon2id hash for Vaultwarden ADMIN_TOKEN using docker inside the container
+echo -e "${GREEN}Generating Vaultwarden admin password hash...${NC}"
+VW_ADMIN_HASH=$(pct exec $CTID -- bash -c "printf '%s\n%s\n' '$VW_ADMIN_PASS' '$VW_ADMIN_PASS' | docker run --rm -i vaultwarden/server:latest /vaultwarden hash --preset owasp" | grep -o '\$argon2id\$.*' | tr -d '\r' | sed 's/\$/\$\$/g')
+
+if [ -z "$VW_ADMIN_HASH" ]; then
+    echo -e "${RED}Error: Failed to generate Vaultwarden admin password hash.${NC}"
+    exit 1
+fi
+
 # Write .env file with secrets
 pct exec $CTID -- bash -c "cat > /opt/core/.env << EOF
-VW_ADMIN_TOKEN=$VW_ADMIN_PASS
+VW_ADMIN_TOKEN=$VW_ADMIN_HASH
 EOF"
 
 # Write docker-compose.yml
@@ -153,12 +162,27 @@ EOF
 echo -e "${GREEN}[4/4] Starting services...${NC}"
 pct exec $CTID -- bash -c "cd /opt/core && docker compose up -d"
 
-echo -e "\n${BLUE}=========================================="
-echo -e " ✅ Core Services Ready! (الخدمات جاهزة)"
-echo -e "==========================================${NC}"
-echo -e "Nginx Proxy Manager: ${YELLOW}http://${STATIC_IP}:81${NC}  (admin@example.com / changeme)"
-echo -e "Homepage:            ${YELLOW}http://${STATIC_IP}:3000${NC}"
-echo -e "Portainer:           ${YELLOW}http://${STATIC_IP}:9000${NC}"
-echo -e "Vaultwarden:         ${YELLOW}http://${STATIC_IP}:8080${NC}"
-echo -e "Vaultwarden Admin:   ${YELLOW}http://${STATIC_IP}:8080/admin${NC}"
+echo -e "\n${BLUE}================================================================"
+echo -e " ✅ CORE SETUP COMPLETE! TAKE A SCREENSHOT OF THIS BOX "
+echo -e "================================================================${NC}"
+echo -e "${GREEN}▶ Nginx Proxy Manager (Reverse Proxy) ${NC}"
+echo -e "   - URL:      ${YELLOW}http://${STATIC_IP}:81${NC}"
+echo -e "   - Default:  ${YELLOW}admin@example.com${NC} / ${YELLOW}changeme${NC}"
+echo -e ""
+echo -e "${GREEN}▶ Vaultwarden (Passwords) ${NC}"
+echo -e "   - URL:      ${YELLOW}http://${STATIC_IP}:8080${NC}"
+echo -e "   - Admin:    ${YELLOW}http://${STATIC_IP}:8080/admin${NC}"
+echo -e "   - Password: ${YELLOW}${VW_ADMIN_PASS}${NC}"
+echo -e ""
+echo -e "${GREEN}▶ Homepage (Dashboard) ${NC}"
+echo -e "   - URL:      ${YELLOW}http://${STATIC_IP}:3000${NC}"
+echo -e ""
+echo -e "${GREEN}▶ Portainer (Container Manager) ${NC}"
+echo -e "   - URL:      ${YELLOW}http://${STATIC_IP}:9000${NC}"
+echo -e ""
+echo -e "${GREEN}▶ Proxmox LXC Server (SSH/Console) ${NC}"
+echo -e "   - IP:       ${YELLOW}${STATIC_IP}${NC}"
+echo -e "   - User:     ${YELLOW}root${NC}"
+echo -e "   - Password: ${YELLOW}${CT_ROOT_PASS}${NC}"
+echo -e "================================================================${NC}"
 echo -e "\n${YELLOW}Note: Watchtower only updates containers that have the label 'com.centurylinklabs.watchtower.enable=true'${NC}"
