@@ -131,7 +131,27 @@ A highly optimized script that deploys **AdGuard Home** (Network-wide ad blocker
 sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/adguard_unbound.sh | sudo bash
 ```
 
+---
 
+### 5️⃣ Proxmox Sync & Backup LXC (`sync_setup.sh`)
+
+A powerful script to instantly spin up a dedicated unprivileged LXC container tailored for secure file synchronization and note backups using **Syncthing** and **CouchDB** (perfect for Obsidian LiveSync).
+
+<details>
+<summary><b>✨ View Features</b></summary>
+
+- 🚀 **Automated LXC Creation:** Deploys a Debian 12 unprivileged container.
+- 💾 **External Storage Support:** Optionally formats and mounts a dedicated external drive directly into the LXC for sync data.
+- 🔄 **Syncthing:** Pre-configured for local file synchronization.
+- 📝 **CouchDB / Obsidian LiveSync:** Pre-installed CouchDB with full CORS configuration ready for Obsidian LiveSync.
+- 🔐 **Secure Setup:** Prompts for a custom admin password for CouchDB and Syncthing.
+</details>
+
+**🚀 Run Command:**
+*(Run from your Proxmox Host as root or using sudo)*
+```bash
+sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/sync_setup.sh | sudo bash
+```
 
 ---
 
