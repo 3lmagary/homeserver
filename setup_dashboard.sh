@@ -53,13 +53,25 @@ pip install -r requirements.txt -q
 
 # Ensure .env exists
 if [ ! -f ".env" ]; then
-    echo -e "${YELLOW}Warning: .env file not found. Creating from .env.example...${NC}"
-    cp .env.example .env
+    echo -e "${YELLOW}No .env file found. Let's set it up now!${NC}"
+    echo -e "Please provide your Nginx Proxy Manager (NPM) and Cloudflare credentials:"
+    
+    read -p "NPM URL (e.g. http://192.168.1.50:81): " NPM_URL < /dev/tty
+    read -p "NPM Email: " NPM_EMAIL < /dev/tty
+    read -sp "NPM Password: " NPM_PASSWORD < /dev/tty
     echo ""
-    echo -e "${RED}ACTION REQUIRED:${NC}"
-    echo -e "Please edit ${BOLD}auto_exposer/.env${NC} and put your Cloudflare and NPM credentials."
-    echo -e "After editing, run this script again."
-    exit 1
+    read -sp "Cloudflare API Token: " CF_API_TOKEN < /dev/tty
+    echo ""
+    read -p "Your Domain Name (e.g. example.com): " CF_DOMAIN < /dev/tty
+    
+    cat << EOF > .env
+NPM_URL=$NPM_URL
+NPM_EMAIL=$NPM_EMAIL
+NPM_PASSWORD=$NPM_PASSWORD
+CF_API_TOKEN=$CF_API_TOKEN
+CF_DOMAIN=$CF_DOMAIN
+EOF
+    echo -e "${GREEN}.env file created successfully!${NC}"
 fi
 
 echo -e "${GREEN}Launching AutoExposer...${NC}"
