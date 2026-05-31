@@ -149,101 +149,128 @@ if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
 LXC_NAME="SyncServer"
 
 echo -e "${GREEN}[3/4] Creating LXC Container $CTID...${NC}"
-pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --hostname "$LXC_NAME" --net0 $NET_CONFIG --unprivileged 1 --features nesting=1
+pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --hostname "$LXC_NAME" --net0 $NET_CONFIG --unprivileged 1 --features nesting=1,keyctl=1
 
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
     echo "Binding $MOUNT_DIR to LXC..."
     pct set $CTID -mp0 "$MOUNT_DIR,mp=/mnt/sync_data"
-    # Ensure syncthing inside LXC (UID 1000 -> Host 101000) has access
-    if [ "$FS_TYPE" == "ext4" ]; then
-        chown -R 101000:101000 "$MOUNT_DIR"
-    fi
 fi
 
 pct set $CTID -onboot 1
 pct start $CTID
-sleep 10
+sleep 15
 
-echo -e "${GREEN}[4/4] Installing Services (CouchDB & Syncthing)...${NC}"
-pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl apt-transport-https gnupg ca-certificates sudo"
+echo -e "${GREEN}[4/4] Installing Docker and Services...${NC}"
+pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certificates"
+pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
 
-# COUCHDB
-echo "Installing CouchDB..."
-pct exec $CTID -- bash -c "killall -9 apt apt-get dpkg unattended-upgrades 2>/dev/null || true"
-pct exec $CTID -- bash -c "rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock"
-pct exec $CTID -- bash -c "dpkg --configure -a"
+echo "Configuring Docker Compose stack..."
+pct exec $CTID -- mkdir -p /opt/sync/couchdb
+pct exec $CTID -- mkdir -p /opt/sync/syncthing
+pct exec $CTID -- mkdir -p /mnt/sync_data
 
-pct exec $CTID -- bash -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y adduser"
-pct exec $CTID -- bash -c "useradd -r -d /opt/couchdb -M -s /usr/sbin/nologin couchdb 2>/dev/null || true"
+# Create CouchDB CORS config
+pct exec $CTID -- bash -c "cat << 'EOF' > /opt/sync/couchdb/cors.ini
+[httpd]
+enable_cors = true
 
-pct exec $CTID -- bash -c "curl -fsSL https://couchdb.apache.org/repo/keys.asc | gpg --dearmor | tee /usr/share/keyrings/couchdb-archive-keyring.gpg >/dev/null 2>&1"
-pct exec $CTID -- bash -c "source /etc/os-release && echo \"deb [signed-by=/usr/share/keyrings/couchdb-archive-keyring.gpg] https://apache.jfrog.io/artifactory/couchdb-deb/ \${VERSION_CODENAME} main\" | tee /etc/apt/sources.list.d/couchdb.list >/dev/null"
-pct exec $CTID -- bash -c "echo 'couchdb couchdb/mode select standalone' | debconf-set-selections"
-pct exec $CTID -- bash -c "echo 'couchdb couchdb/bindaddress string 0.0.0.0' | debconf-set-selections"
-pct exec $CTID -- bash -c "echo 'couchdb couchdb/adminpass string $SYNC_PASS' | debconf-set-selections"
-pct exec $CTID -- bash -c "echo 'couchdb couchdb/adminpass_again string $SYNC_PASS' | debconf-set-selections"
-pct exec $CTID -- bash -c "echo 'couchdb couchdb/erlang_magic_cookie string couchdb' | debconf-set-selections"
-pct exec $CTID -- bash -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y couchdb"
-
-pct exec $CTID -- bash -c "cat <<EOF >> /opt/couchdb/etc/local.ini
+[cors]
+origins = *
+credentials = true
+methods = GET, PUT, POST, HEAD, DELETE
+headers = accept, authorization, content-type, origin, referer, x-csrf-token
 
 [chttpd]
-bind_address = 0.0.0.0
-
-[admins]
-admin = $SYNC_PASS
+max_document_size = 50000000
 EOF"
-pct exec $CTID -- bash -c "mkdir -p /opt/couchdb /etc/couchdb /var/lib/couchdb /var/log/couchdb /var/run/couchdb 2>/dev/null || true"
-pct exec $CTID -- bash -c "chown -R couchdb:couchdb /opt/couchdb /etc/couchdb /var/lib/couchdb /var/log/couchdb /var/run/couchdb 2>/dev/null || true"
-pct exec $CTID -- bash -c "systemctl enable --now couchdb"
 
-echo "Waiting for CouchDB to start before configuring CORS..."
-sleep 5
+# Create docker-compose.yml
+cat << EOF | pct exec $CTID -- tee /opt/sync/docker-compose.yml >/dev/null
+services:
+  couchdb:
+    image: couchdb:latest
+    container_name: couchdb
+    restart: unless-stopped
+    ports:
+      - 5984:5984
+    environment:
+      - COUCHDB_USER=admin
+      - COUCHDB_PASSWORD=$SYNC_PASS
+    volumes:
+      - ./couchdb/data:/opt/couchdb/data
+      - ./couchdb/cors.ini:/opt/couchdb/etc/local.d/cors.ini:ro
+    labels:
+      - "autoexposer.enable=true"
+      - "autoexposer.name=CouchDB"
+      - "autoexposer.group=Sync & Backup"
+      - "autoexposer.icon=couchdb"
+      - "autoexposer.port=5984"
 
-echo "Configuring CouchDB for Obsidian LiveSync..."
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/httpd/enable_cors -d '\"true\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/origins -d '\"*\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/credentials -d '\"true\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/methods -d '\"GET, PUT, POST, HEAD, DELETE\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/cors/headers -d '\"accept, authorization, content-type, origin, referer, x-csrf-token\"'"
-pct exec $CTID -- bash -c "curl -s -X PUT http://admin:${SYNC_PASS}@127.0.0.1:5984/_node/_local/_config/couchdb/max_document_size -d '\"50000000\"'"
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Africa/Cairo
+    ports:
+      - 8384:8384
+      - 22000:22000/tcp
+      - 22000:22000/udp
+      - 21027:21027/udp
+    volumes:
+      - ./syncthing/config:/config
+      - /mnt/sync_data:/data1
+    labels:
+      - "autoexposer.enable=true"
+      - "autoexposer.name=Syncthing"
+      - "autoexposer.group=Sync & Backup"
+      - "autoexposer.icon=syncthing"
+      - "autoexposer.port=8384"
 
-# SYNCTHING
-echo "Installing Syncthing..."
-pct exec $CTID -- bash -c "curl -fsSL https://syncthing.net/release-key.gpg | gpg --dearmor -o /usr/share/keyrings/syncthing-archive-keyring.gpg"
-pct exec $CTID -- bash -c "echo 'deb [signed-by=/usr/share/keyrings/syncthing-archive-keyring.gpg] https://apt.syncthing.net/ syncthing stable' | tee /etc/apt/sources.list.d/syncthing.list"
-pct exec $CTID -- bash -c "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y syncthing"
+  portainer-agent:
+    image: portainer/agent:latest
+    container_name: portainer_agent
+    restart: unless-stopped
+    ports:
+      - 9001:9001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
 
-echo "Configuring Syncthing..."
-pct exec $CTID -- bash -c "useradd -m -s /bin/bash syncthing"
-pct exec $CTID -- bash -c "sudo -u syncthing syncthing --generate=\"/home/syncthing/.config/syncthing\""
-pct exec $CTID -- bash -c "sed -i 's/127.0.0.1:8384/0.0.0.0:8384/g' /home/syncthing/.config/syncthing/config.xml"
-pct exec $CTID -- bash -c "sed -i 's/<globalAnnounceEnabled>true/<globalAnnounceEnabled>false/g' /home/syncthing/.config/syncthing/config.xml"
-pct exec $CTID -- bash -c "sed -i 's/<relaysEnabled>true/<relaysEnabled>false/g' /home/syncthing/.config/syncthing/config.xml"
-pct exec $CTID -- bash -c "sed -i 's/<natEnabled>true/<natEnabled>false/g' /home/syncthing/.config/syncthing/config.xml"
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 12 * * *
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+EOF
 
-if [ "$USE_EXTRA_DISK" == "yes" ]; then
-    pct exec $CTID -- bash -c "mkdir -p /mnt/sync_data"
-    pct exec $CTID -- bash -c "chown syncthing:syncthing /mnt/sync_data"
-fi
-
-pct exec $CTID -- bash -c "systemctl enable syncthing@syncthing.service && systemctl start syncthing@syncthing.service"
+echo "Starting Docker Compose..."
+pct exec $CTID -- bash -c "cd /opt/sync && docker compose up -d"
 
 LXC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
 
 echo -e "${BLUE}=========================================="
-echo -e " 🎉 SYNC SERVER IS READY!"
+echo -e " 🎉 SYNC SERVER IS READY (Docker Edition)!"
 echo -e "==========================================${NC}"
 echo -e "LXC Container ID : $CTID"
 echo -e "IP Address       : ${YELLOW}$LXC_IP${NC}"
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
-    echo -e "Storage Bound to : ${YELLOW}/mnt/sync_data${NC} (inside Syncthing)"
+    echo -e "Storage Bound to : ${YELLOW}/mnt/sync_data${NC} (mapped inside Syncthing to /data1)"
 fi
 echo -e ""
 echo -e "${GREEN}1) Syncthing (Backups & File Sync)${NC}"
 echo -e "URL: ${YELLOW}http://$LXC_IP:8384${NC}"
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
-    echo -e "   -> When adding a folder in Syncthing, set its path to: /mnt/sync_data/YourFolderName"
+    echo -e "   -> When adding a folder in Syncthing, set its path to: /data1/YourFolderName"
+else
+    echo -e "   -> When adding a folder in Syncthing, set its path to: /data1"
 fi
 echo -e ""
 echo -e "${GREEN}2) CouchDB (Obsidian LiveSync)${NC}"
@@ -257,4 +284,7 @@ echo -e " 2. In plugin settings, enter URI: http://$LXC_IP:5984"
 echo -e " 3. Username: admin / Password: $SYNC_PASS"
 echo -e " 4. Database Name: obsidian"
 echo -e " 5. Click 'Test' and then 'Check Database'. It will create the DB automatically."
+echo -e "${BLUE}==========================================${NC}"
+echo -e "  [+] Included Portainer Agent & Watchtower"
+echo -e "  [+] Included AutoExposer Labels"
 echo -e "${BLUE}==========================================${NC}"
