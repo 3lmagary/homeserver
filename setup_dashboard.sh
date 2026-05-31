@@ -69,12 +69,9 @@ if [ ! -f ".env" ]; then
     
     if [ -z "$AUTO_NPM_URL" ]; then
         read -p "Could not auto-detect NPM. Enter NPM URL (e.g. http://192.168.1.50:81): " AUTO_NPM_URL < /dev/tty
-    else
-        read -p "NPM URL [Press Enter to keep $AUTO_NPM_URL]: " USER_URL < /dev/tty
-        AUTO_NPM_URL=${USER_URL:-$AUTO_NPM_URL}
     fi
     
-    echo -e "\n${YELLOW}(Note: NPM encrypts passwords, so they cannot be auto-extracted. Press Enter to use defaults if you haven't changed them)${NC}"
+    echo ""
     read -p "NPM Email [Default: admin@example.com]: " NPM_EMAIL < /dev/tty
     NPM_EMAIL=${NPM_EMAIL:-"admin@example.com"}
     
