@@ -124,25 +124,18 @@ if ! pveam list local | grep -q debian-12; then
 fi
 LOCAL_TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -n 1)
 
-echo -e "\n${YELLOW}Network Configuration for Sync LXC:${NC}"
-echo "  [1] DHCP (Automatic IP)"
-echo "  [2] Static IP"
-read -p "Choose [1 or 2, Default: 1]: " NET_CHOICE < /dev/tty
+GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
+CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
+if [ -z "$CIDR" ]; then CIDR="24"; fi
+EXAMPLE_IP=$(echo "$GW" | awk -F. '{print $1"."$2"."$3".60"}')
 
-if [ "$NET_CHOICE" == "2" ]; then
-    GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
-    CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
-    if [ -z "$CIDR" ]; then CIDR="24"; fi
-    EXAMPLE_IP=$(echo "$GW" | awk -F. '{print $1"."$2"."$3".60"}')
-    read -p "Enter the desired IP address (e.g. $EXAMPLE_IP): " STATIC_IP < /dev/tty
-    if [ -z "$STATIC_IP" ]; then
-        NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
-    else
-        NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
-    fi
-else
-    NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
+echo -e "\n${YELLOW}Network Configuration for Sync LXC:${NC}"
+read -p "Enter STATIC IP for Sync Server (e.g. $EXAMPLE_IP): " STATIC_IP < /dev/tty
+if [ -z "$STATIC_IP" ]; then 
+    echo -e "${RED}Static IP is required for proper syncing. Exiting.${NC}"
+    exit 1
 fi
+NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
 
 TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
 if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi

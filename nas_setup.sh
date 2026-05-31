@@ -201,29 +201,20 @@ else
     
     LOCAL_TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -n 1)
     
-    echo -e "\n${YELLOW}Network Configuration for NAS:${NC}"
-    echo "  [1] DHCP (Automatic IP from Router)"
-    echo "  [2] Static IP (Recommended so the IP never changes)"
-    read -p "Choose [1 or 2, Default: 1]: " NET_CHOICE < /dev/tty
+    GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
+    CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
+    if [ -z "$CIDR" ]; then CIDR="24"; fi
     
-    if [ "$NET_CHOICE" == "2" ]; then
-        GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
-        CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
-        if [ -z "$CIDR" ]; then CIDR="24"; fi
-        
-        EXAMPLE_IP=$(echo "$GW" | awk -F. '{print $1"."$2"."$3".50"}')
-        
-        echo -e "\nDetected Router/Gateway: $GW"
-        read -p "Enter the desired IP address for the NAS (e.g. $EXAMPLE_IP): " STATIC_IP < /dev/tty
-        if [ -z "$STATIC_IP" ]; then
-            NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
-            echo "No IP entered. Falling back to DHCP."
-        else
-            NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
-        fi
-    else
-        NET_CONFIG="name=eth0,bridge=vmbr0,ip=dhcp"
+    EXAMPLE_IP=$(echo "$GW" | awk -F. '{print $1"."$2"."$3".50"}')
+    
+    echo -e "\n${YELLOW}Network Configuration for NAS (Static IP Required):${NC}"
+    echo -e "Detected Router/Gateway: $GW"
+    read -p "Enter the desired IP address for the NAS (e.g. $EXAMPLE_IP): " STATIC_IP < /dev/tty
+    if [ -z "$STATIC_IP" ]; then
+        echo -e "${RED}Static IP is required for the NAS to work properly. Exiting.${NC}"
+        exit 1
     fi
+    NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
 
     echo -e "\n${YELLOW}Do you want to protect your files with a password?${NC}"
     echo "  [Y] Yes - Secure, requires a username and password to access files (Recommended)."
