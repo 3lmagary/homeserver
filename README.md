@@ -109,7 +109,32 @@ sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup_co
 
 ---
 
-### 4️⃣ AdGuard Home + Unbound DNS (`adguard_unbound.sh`)
+### 4️⃣ AutoExposer Platform (`setup_dashboard.sh`)
+
+A highly advanced Python-based infrastructure management platform. It automatically discovers all your LXC and Docker services (using Traefik-like labels), generates Wildcard SSL certificates via Cloudflare, exposes them via Nginx Proxy Manager, and builds a beautiful Homepage dashboard — entirely hands-free.
+
+> **Note:** Run this script **after** deploying all your core services and purchasing a domain name.
+
+<details>
+<summary><b>✨ View Features</b></summary>
+
+- 🧠 **Hybrid Auto-Discovery:** Scans Proxmox for LXCs and reads Docker container labels (`autoexposer.enable=true`) to detect ports, icons, and categories.
+- 🔒 **Zero-Touch SSL:** Connects securely to NPM API and generates Cloudflare wildcard certificates (`*.yourdomain.com`).
+- 🔄 **State Management:** Uses SQLite to track exactly what has been exposed, preventing duplicates and enabling safe, idempotent re-runs.
+- 🎨 **Homepage Auto-Builder:** Automatically groups your discovered services and writes a clean, formatted `services.yaml` to your Homepage container.
+- 🧪 **Dry-Run Mode:** Test your setup safely without modifying NPM or Homepage.
+- 🐍 **Modern Python Architecture:** Built using `typer`, `rich`, `pydantic`, and `httpx` for extreme speed and reliability.
+</details>
+
+**🚀 Run Command:**
+*(Run from your Proxmox Host as a regular sudo user)*
+```bash
+sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup_dashboard.sh | sudo bash
+```
+
+---
+
+### 5️⃣ AdGuard Home + Unbound DNS (`adguard_unbound.sh`)
 
 A highly optimized script that deploys **AdGuard Home** (Network-wide ad blocker) and **Unbound** (Recursive DNS resolver) inside a dedicated LXC container to provide fast, private, and ad-free internet for your entire home.
 
@@ -133,7 +158,7 @@ sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/adguard_
 
 ---
 
-### 5️⃣ Proxmox Sync & Backup LXC (`sync_setup.sh`)
+### 6️⃣ Proxmox Sync & Backup LXC (`sync_setup.sh`)
 
 A powerful script to instantly spin up a dedicated unprivileged LXC container tailored for secure file synchronization and note backups using **Syncthing** and **CouchDB** (perfect for Obsidian LiveSync).
 
