@@ -53,19 +53,31 @@ pip install -r requirements.txt -q
 
 # Ensure .env exists
 if [ ! -f ".env" ]; then
-    echo -e "${YELLOW}No .env file found. Let's set it up now!${NC}"
-    echo -e "Please provide your Nginx Proxy Manager (NPM) and Cloudflare credentials:"
+    echo -e "${YELLOW}No .env file found. Setting it up now!${NC}"
     
-    read -p "NPM URL (e.g. http://192.168.1.50:81): " NPM_URL < /dev/tty
-    read -p "NPM Email: " NPM_EMAIL < /dev/tty
-    read -sp "NPM Password: " NPM_PASSWORD < /dev/tty
+    # Auto-discover Core-Services LXC IP
+    CORE_CTID=$(pct list 2>/dev/null | awk '$3 == "Core-Services" {print $1}')
+    if [ -n "$CORE_CTID" ]; then
+        CORE_IP=$(pct exec $CORE_CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+        AUTO_NPM_URL="http://${CORE_IP}:81"
+        echo -e "${GREEN}✓ Auto-discovered NPM URL: ${AUTO_NPM_URL}${NC}"
+    else
+        AUTO_NPM_URL=""
+        read -p "Could not auto-detect NPM IP. Enter NPM URL (e.g. http://192.168.1.50:81): " AUTO_NPM_URL < /dev/tty
+    fi
+    
+    # Use defaults for NPM
+    NPM_EMAIL="admin@example.com"
+    NPM_PASSWORD="changeme"
+    echo -e "${GREEN}✓ Using default NPM credentials (admin@example.com)${NC}"
+    
     echo ""
-    read -sp "Cloudflare API Token: " CF_API_TOKEN < /dev/tty
+    read -sp "Enter Cloudflare API Token: " CF_API_TOKEN < /dev/tty
     echo ""
-    read -p "Your Domain Name (e.g. example.com): " CF_DOMAIN < /dev/tty
+    read -p "Enter Your Domain Name (e.g. example.com): " CF_DOMAIN < /dev/tty
     
     cat << EOF > .env
-NPM_URL=$NPM_URL
+NPM_URL=$AUTO_NPM_URL
 NPM_EMAIL=$NPM_EMAIL
 NPM_PASSWORD=$NPM_PASSWORD
 CF_API_TOKEN=$CF_API_TOKEN
