@@ -55,21 +55,32 @@ pip install -r requirements.txt -q
 if [ ! -f ".env" ]; then
     echo -e "${YELLOW}No .env file found. Setting it up now!${NC}"
     
-    # Auto-discover Core-Services LXC IP
-    CORE_CTID=$(pct list 2>/dev/null | awk '$3 == "Core-Services" {print $1}')
-    if [ -n "$CORE_CTID" ]; then
-        CORE_IP=$(pct exec $CORE_CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
-        AUTO_NPM_URL="http://${CORE_IP}:81"
-        echo -e "${GREEN}✓ Auto-discovered NPM URL: ${AUTO_NPM_URL}${NC}"
+    # Smart Auto-discover NPM IP by scanning all LXCs for the NPM Docker container
+    echo -e "${BLUE}Scanning LXCs to find Nginx Proxy Manager...${NC}"
+    AUTO_NPM_URL=""
+    for CT in $(pct list 2>/dev/null | awk 'NR>1 {print $1}'); do
+        if pct exec $CT -- bash -c "command -v docker >/dev/null && docker ps | grep -q 'nginx-proxy-manager'" 2>/dev/null; then
+            CORE_IP=$(pct exec $CT -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+            AUTO_NPM_URL="http://${CORE_IP}:81"
+            echo -e "${GREEN}✓ Found NPM running on LXC $CT (IP: $CORE_IP)${NC}"
+            break
+        fi
+    done
+    
+    if [ -z "$AUTO_NPM_URL" ]; then
+        read -p "Could not auto-detect NPM. Enter NPM URL (e.g. http://192.168.1.50:81): " AUTO_NPM_URL < /dev/tty
     else
-        AUTO_NPM_URL=""
-        read -p "Could not auto-detect NPM IP. Enter NPM URL (e.g. http://192.168.1.50:81): " AUTO_NPM_URL < /dev/tty
+        read -p "NPM URL [Press Enter to keep $AUTO_NPM_URL]: " USER_URL < /dev/tty
+        AUTO_NPM_URL=${USER_URL:-$AUTO_NPM_URL}
     fi
     
-    # Use defaults for NPM
-    NPM_EMAIL="admin@example.com"
-    NPM_PASSWORD="changeme"
-    echo -e "${GREEN}✓ Using default NPM credentials (admin@example.com)${NC}"
+    echo -e "\n${YELLOW}(Note: NPM encrypts passwords, so they cannot be auto-extracted. Press Enter to use defaults if you haven't changed them)${NC}"
+    read -p "NPM Email [Default: admin@example.com]: " NPM_EMAIL < /dev/tty
+    NPM_EMAIL=${NPM_EMAIL:-"admin@example.com"}
+    
+    read -sp "NPM Password [Default: changeme]: " NPM_PASSWORD < /dev/tty
+    NPM_PASSWORD=${NPM_PASSWORD:-"changeme"}
+    echo ""
     
     echo ""
     read -sp "Enter Cloudflare API Token: " CF_API_TOKEN < /dev/tty
