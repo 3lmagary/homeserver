@@ -81,7 +81,6 @@ class NPMClient:
             "nice_name": f"Wildcard {domain}",
             "domain_names": [f"*.{domain}", domain],
             "meta": {
-                "letsencrypt_agree": True,
                 "dns_challenge": True,
                 "dns_provider": "cloudflare",
                 "dns_provider_credentials": f"dns_cloudflare_api_token = {cf_token}"
