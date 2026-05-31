@@ -65,6 +65,10 @@ def update_homepage_config(all_services, ctid):
     groups = {}
     
     for s in all_services:
+        # Skip Homepage dashboard itself from being listed to avoid redundancy and remove "Dashboard" section
+        if s.name.lower() == "homepage" or s.domain.startswith("homepage."):
+            continue
+
         g_name = s.group or "Other Services"
         if g_name not in groups:
             groups[g_name] = []
@@ -95,19 +99,37 @@ def update_homepage_config(all_services, ctid):
         res = subprocess.run(cmd, input=yaml_content, capture_output=True, text=True, timeout=10)
         if res.returncode == 0:
             logger.info("Successfully updated Homepage services.yaml in LXC")
-            
-            # Restart Homepage container to force reload configs cleanly
-            subprocess.run([
-                "pct", "exec", str(ctid), "--", "bash", "-c",
-                "cd /opt/core && docker compose restart homepage"
-            ], capture_output=True, timeout=20)
-            logger.info("Restarted Homepage container in LXC")
             return True
         else:
             logger.error(f"Failed to write services.yaml to LXC: {res.stderr}")
     except Exception as e:
         logger.error(f"Error updating Homepage config: {e}")
         
+    return False
+
+
+def update_homepage_settings(ctid):
+    """Write settings.yaml configuration to Homepage LXC container to apply background and theme styling."""
+    if not ctid:
+        return False
+    
+    settings_yaml = """theme: dark
+color: slate
+background:
+  blur: sm
+  brightness: 50
+  image: "https://images.unsplash.com/photo-1517511620798-cec156a5d15c?q=80&w=2070&auto=format&fit=crop"
+"""
+    try:
+        cmd = ["pct", "exec", str(ctid), "--", "bash", "-c", "cat > /opt/core/homepage/settings.yaml"]
+        res = subprocess.run(cmd, input=settings_yaml, capture_output=True, text=True, timeout=10)
+        if res.returncode == 0:
+            logger.info("Successfully updated Homepage settings.yaml in LXC")
+            return True
+        else:
+            logger.error(f"Failed to write settings.yaml to LXC: {res.stderr}")
+    except Exception as e:
+        logger.error(f"Error updating Homepage settings: {e}")
     return False
 
 
@@ -277,7 +299,7 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
 
     # ── Step 6: Get existing NPM hosts to avoid duplicates ──
     existing_npm_hosts = {}
-    if npm:
+    if npm and not run_cleanup:
         with console.status("[bold green]Fetching existing NPM proxy hosts..."):
             existing_hosts = npm.get_hosts()
             for host in existing_hosts:
@@ -368,10 +390,18 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
     core_ctid = get_core_services_ctid()
     if core_ctid:
         with console.status("[bold green]Updating Homepage Dashboard configuration..."):
-            if update_homepage_config(all_services, core_ctid):
-                console.print("[green]✓ Homepage dashboard configuration updated and reloaded.[/green]")
+            config_updated = update_homepage_config(all_services, core_ctid)
+            settings_updated = update_homepage_settings(core_ctid)
+            
+            if config_updated and settings_updated:
+                # Restart Homepage container to force reload configs cleanly
+                subprocess.run([
+                    "pct", "exec", str(core_ctid), "--", "bash", "-c",
+                    "cd /opt/core && docker compose restart homepage"
+                ], capture_output=True, timeout=20)
+                console.print("[green]✓ Homepage dashboard configuration and styling updated and reloaded.[/green]")
             else:
-                console.print("[yellow]⚠ Failed to update Homepage configuration.[/yellow]")
+                console.print("[yellow]⚠ Failed to update Homepage configuration or settings.[/yellow]")
     else:
         console.print("[yellow]⚠ Core-Services LXC not found. Skipping Homepage dashboard update.[/yellow]")
 

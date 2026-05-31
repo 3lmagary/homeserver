@@ -80,13 +80,13 @@ class NPMClient:
         payload = {
             "nice_name": f"Wildcard {domain}",
             "domain_names": [f"*.{domain}", domain],
+            "letsencrypt_email": email,
+            "dns_provider": "cloudflare",
+            "dns_provider_credentials": f"dns_cloudflare_api_token = {cf_token}",
+            "propagation_seconds": 30,
             "meta": {
-                "letsencrypt_email": email,
                 "letsencrypt_agree": True,
-                "dns_challenge": True,
-                "dns_provider": "cloudflare",
-                "dns_provider_credentials": f"dns_cloudflare_api_token = {cf_token}",
-                "propagation_seconds": 30
+                "dns_challenge": True
             },
             "provider": "letsencrypt"
         }
