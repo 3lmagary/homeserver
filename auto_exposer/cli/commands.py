@@ -55,6 +55,27 @@ def get_core_services_ctid():
     return None
 
 
+def map_group_name(group_name, svc_name):
+    """Map discovered service groups into the user's defined layout groups."""
+    name_lower = svc_name.lower()
+    g_lower = (group_name or "").lower()
+    
+    # 1. Media & Downloads
+    if any(x in name_lower for x in ["jellyfin", "immich", "plex", "transmission", "torrent", "aria2", "sabnzbd"]):
+        return "Media & Downloads"
+    if g_lower in ["media", "downloads"]:
+        return "Media & Downloads"
+        
+    # 2. Projects & DBs
+    if any(x in name_lower for x in ["couchdb", "postgres", "mysql", "redis", "mongodb", "syncthing", "db", "database"]):
+        return "Projects & DBs"
+    if g_lower in ["sync & backup", "sync", "database", "databases", "automation", "cloud"]:
+        return "Projects & DBs"
+        
+    # 3. Infrastructure (Default)
+    return "Infrastructure"
+
+
 def update_homepage_config(all_services, ctid):
     """Generate and write services.yaml configuration to Homepage LXC container."""
     if not ctid:
@@ -69,7 +90,7 @@ def update_homepage_config(all_services, ctid):
         if s.name.lower() == "homepage" or s.domain.startswith("homepage."):
             continue
 
-        g_name = s.group or "Other Services"
+        g_name = map_group_name(s.group, s.name)
         if g_name not in groups:
             groups[g_name] = []
         
@@ -109,7 +130,7 @@ def update_homepage_config(all_services, ctid):
 
 
 def update_homepage_settings(ctid):
-    """Write settings.yaml configuration to Homepage LXC container to apply background and theme styling."""
+    """Write settings.yaml configuration to Homepage LXC container to apply background, layout, and theme styling."""
     if not ctid:
         return False
     
@@ -119,6 +140,21 @@ background:
   blur: sm
   brightness: 50
   image: "https://images.unsplash.com/photo-1517511620798-cec156a5d15c?q=80&w=2070&auto=format&fit=crop"
+
+layout:
+  - Infrastructure:
+      style: row
+      columns: 4
+  - Media & Downloads:
+      style: row
+      columns: 4
+  - Projects & DBs:
+      style: row
+      columns: 4
+
+hideVersion: false
+layoutDesign:
+  style: "glass"
 """
     try:
         cmd = ["pct", "exec", str(ctid), "--", "bash", "-c", "cat > /opt/core/homepage/settings.yaml"]
