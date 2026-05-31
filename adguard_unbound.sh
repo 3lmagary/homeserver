@@ -69,16 +69,9 @@ if [ -z "$STATIC_IP" ]; then
     exit 1
 fi
 
-read -sp "Enter a password for the Container root user: " CT_ROOT_PASS < /dev/tty; echo
-if [ -z "$CT_ROOT_PASS" ]; then echo -e "${RED}Container password cannot be empty.${NC}"; exit 1; fi
-
-NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
-
-TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
-if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
 
 echo "Creating LXC Container $CTID on storage $TARGET_STORAGE..."
-pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --hostname "$LXC_NAME" --password "$CT_ROOT_PASS" --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1
+pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --hostname "$LXC_NAME" --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1
 
 echo "Configuring AdGuard to start automatically on boot..."
 pct set $CTID -onboot 1
@@ -145,5 +138,8 @@ echo -e ""
 echo -e "${GREEN}▶ Proxmox LXC Server (SSH/Console) ${NC}"
 echo -e "   - IP:       ${YELLOW}${STATIC_IP}${NC}"
 echo -e "   - User:     ${YELLOW}root${NC}"
-echo -e "   - Password: ${YELLOW}${CT_ROOT_PASS}${NC}"
 echo -e "${BLUE}==========================================${NC}"
+
+echo -e ""
+echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
+echo -e "To access this container's shell, run: \033[0;32mpct enter \$CTID\033[0m from your Proxmox host."

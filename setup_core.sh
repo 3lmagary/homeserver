@@ -50,10 +50,6 @@ read -p "Enter Disk Size in GB (default: 10): " DISK_SIZE < /dev/tty
 if [ -z "$DISK_SIZE" ]; then DISK_SIZE="10"; fi
 if ! [[ "$DISK_SIZE" =~ ^[0-9]+$ ]]; then echo -e "${RED}Disk size must be a number.${NC}"; exit 1; fi
 
-read -sp "Enter a password for the Container root user: " CT_ROOT_PASS < /dev/tty; echo
-if [ -z "$CT_ROOT_PASS" ]; then echo -e "${RED}Container password cannot be empty.${NC}"; exit 1; fi
-
-read -p "Enable Telegram notifications for updates? (y/n): " ENABLE_TG < /dev/tty
 if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
     read -p "Enter Telegram Bot Token: " TG_TOKEN < /dev/tty
     if [ -z "$TG_TOKEN" ]; then echo -e "${RED}Telegram Bot Token cannot be empty.${NC}"; exit 1; fi
@@ -67,7 +63,6 @@ if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
 
 echo "Creating Core LXC $CTID on $TARGET_STORAGE with ${DISK_SIZE}GB disk..."
 pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:$DISK_SIZE" --hostname "$LXC_NAME" \
-    --memory 1024 --swap 0 --cores 2 --password "$CT_ROOT_PASS" \
     --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1,keyctl=1
 pct set $CTID -onboot 1 --timezone host
 pct start $CTID
@@ -185,6 +180,9 @@ echo -e ""
 echo -e "${GREEN}▶ Proxmox LXC Server (SSH/Console) ${NC}"
 echo -e "   - IP:       ${YELLOW}${STATIC_IP}${NC}"
 echo -e "   - User:     ${YELLOW}root${NC}"
-echo -e "   - Password: ${YELLOW}${CT_ROOT_PASS}${NC}"
 echo -e "================================================================${NC}"
 echo -e "\n${YELLOW}Note: Watchtower only updates containers that have the label 'com.centurylinklabs.watchtower.enable=true'${NC}"
+
+echo -e ""
+echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
+echo -e "To access this container's shell, run: \033[0;32mpct enter \$CTID\033[0m from your Proxmox host."

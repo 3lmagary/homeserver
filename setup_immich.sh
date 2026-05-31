@@ -45,10 +45,6 @@ if [ -z "$STATIC_IP" ]; then echo -e "${RED}Static IP is required. Exiting.${NC}
 read -p "Enter Disk Size in GB (default: 20): " DISK_SIZE < /dev/tty
 if [ -z "$DISK_SIZE" ]; then DISK_SIZE="20"; fi
 
-read -sp "Enter a password for the Container root user: " CT_ROOT_PASS < /dev/tty; echo
-if [ -z "$CT_ROOT_PASS" ]; then echo -e "${RED}Container password cannot be empty.${NC}"; exit 1; fi
-
-read -p "Enable Telegram notifications for updates? (y/n): " ENABLE_TG < /dev/tty
 if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
     read -p "Enter Telegram Bot Token: " TG_TOKEN < /dev/tty
     read -p "Enter Telegram Chat ID: " TG_CHAT_ID < /dev/tty
@@ -61,7 +57,6 @@ if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
 # Immich needs at least 2GB RAM for ML models
 echo "Creating Immich LXC $CTID on $TARGET_STORAGE with ${DISK_SIZE}GB disk (2GB RAM for AI models)..."
 pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:$DISK_SIZE" --hostname "$LXC_NAME" \
-    --password "$CT_ROOT_PASS" --cores 4 --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1,keyctl=1 \
     --memory 2048 --swap 512
 pct set $CTID -onboot 1
 pct start $CTID
@@ -127,3 +122,7 @@ echo -e "Access Immich at: ${YELLOW}http://${STATIC_IP}:2283${NC}"
 echo -e "\n${YELLOW}Note: The first startup takes 3-5 minutes."
 echo -e "Immich needs to initialize the database and download AI models.${NC}"
 echo -e "${YELLOW}Photos are stored at: /opt/immich/library (inside the container)${NC}"
+
+echo -e ""
+echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
+echo -e "To access this container's shell, run: \033[0;32mpct enter \$CTID\033[0m from your Proxmox host."
