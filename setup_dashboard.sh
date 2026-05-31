@@ -14,8 +14,24 @@ if [ "$EUID" -ne 0 ]; then
   echo -e "${YELLOW}Warning: You should probably run this as root on Proxmox.${NC}"
 fi
 
-# Navigate to the auto_exposer directory
-cd "$(dirname "$0")/auto_exposer"
+if ! command -v git &> /dev/null; then
+    echo -e "${GREEN}Installing git...${NC}"
+    apt-get update >/dev/null 2>&1
+    apt-get install -y git >/dev/null 2>&1
+fi
+
+if [ -d "/opt/homeserver" ]; then
+    echo -e "${GREEN}Updating AutoExposer repository...${NC}"
+    cd /opt/homeserver
+    git pull origin main -q
+else
+    echo -e "${GREEN}Downloading AutoExposer Platform...${NC}"
+    cd /opt
+    git clone https://github.com/3lmagary/homeserver.git -q
+    cd homeserver
+fi
+
+cd auto_exposer
 
 # Install Python venv if missing (Debian/Proxmox)
 if ! dpkg -l | grep -q python3-venv; then
