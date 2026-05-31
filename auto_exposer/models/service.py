@@ -11,3 +11,5 @@ class DiscoveredService(BaseModel):
     description: str = ""
     is_docker: bool = True
     lxc_name: Optional[str] = None
+    advanced_config: str = ""
+    forward_scheme: str = "http"

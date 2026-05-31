@@ -2,22 +2,24 @@ import subprocess
 from utils.logger import logger
 from models.service import DiscoveredService
 
-# Known services: container_name -> (display_name, default_port, group, icon)
+# Known services: container_name -> service config dict
 KNOWN_SERVICES = {
-    "npm": ("Nginx Proxy Manager", 81, "Infrastructure", "nginx"),
-    "vaultwarden": ("Vaultwarden", 8080, "Security", "vaultwarden"),
-    "homepage": ("Homepage", 3000, "Dashboard", "homepage"),
-    "portainer": ("Portainer", 9000, "Infrastructure", "portainer"),
-    "syncthing": ("Syncthing", 8384, "Sync & Backup", "syncthing"),
-    "couchdb": ("CouchDB", 5984, "Sync & Backup", "couchdb"),
-    "immich_server": ("Immich", 2283, "Media", "immich"),
-    "jellyfin": ("Jellyfin", 8096, "Media", "jellyfin"),
-    "n8n": ("n8n", 5678, "Automation", "n8n"),
-    "nextcloud": ("Nextcloud", 8080, "Cloud", "nextcloud"),
-    "adguard": ("AdGuard Home", 3000, "DNS & Security", "adguard-home"),
+    "npm": {"name": "Nginx Proxy Manager", "port": 81, "group": "Infrastructure", "icon": "nginx-proxy-manager"},
+    "vaultwarden": {"name": "Vaultwarden", "port": 8080, "group": "Security", "icon": "vaultwarden"},
+    "homepage": {"name": "Homepage", "port": 3000, "group": "Dashboard", "icon": "homepage"},
+    "portainer": {"name": "Portainer", "port": 9000, "group": "Infrastructure", "icon": "portainer"},
+    "syncthing": {"name": "Syncthing", "port": 8384, "group": "Sync & Backup", "icon": "syncthing"},
+    "couchdb": {
+        "name": "CouchDB", "port": 5984, "group": "Sync & Backup", "icon": "couchdb",
+        "advanced_config": "location = / {\n    return 301 /_utils;\n}"
+    },
+    "immich_server": {"name": "Immich", "port": 2283, "group": "Media", "icon": "immich"},
+    "jellyfin": {"name": "Jellyfin", "port": 8096, "group": "Media", "icon": "jellyfin"},
+    "n8n": {"name": "n8n", "port": 5678, "group": "Automation", "icon": "n8n"},
+    "nextcloud": {"name": "Nextcloud", "port": 8080, "group": "Cloud", "icon": "nextcloud"},
 }
 
-# Services to skip (infrastructure/background, not user-facing)
+# Skip these (background/infrastructure containers not user-facing)
 SKIP_SERVICES = {"watchtower", "portainer_agent", "portainer-agent"}
 
 
@@ -45,7 +47,6 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
             ports = parts[1] if len(parts) > 1 else ""
             labels_str = parts[2] if len(parts) > 2 else ""
 
-            # Skip infrastructure services
             if name in SKIP_SERVICES:
                 continue
 
@@ -68,23 +69,25 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
                     port=port,
                     group=labels.get("autoexposer.group", "Docker Services"),
                     icon=labels.get("autoexposer.icon", "docker"),
+                    advanced_config=labels.get("autoexposer.advanced_config", ""),
                     lxc_name=lxc_name
                 ))
-            # Otherwise, check if it's a known service
+            # Known service auto-detection
             elif name in KNOWN_SERVICES:
-                display_name, default_port, group, icon = KNOWN_SERVICES[name]
-                port = _parse_port(ports, default_port)
+                info = KNOWN_SERVICES[name]
+                port = _parse_port(ports, info["port"])
                 services.append(DiscoveredService(
-                    name=display_name,
+                    name=info["name"],
                     domain=f"{name}.{base_domain}",
                     ip=lxc_ip,
                     port=port,
-                    group=group,
-                    icon=icon,
+                    group=info["group"],
+                    icon=info["icon"],
+                    advanced_config=info.get("advanced_config", ""),
                     lxc_name=lxc_name
                 ))
             else:
-                # Unknown container, still add it with best-effort port detection
+                # Unknown container - still add with best-effort
                 port = _parse_port(ports, 80)
                 if port:
                     services.append(DiscoveredService(
@@ -105,7 +108,7 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
 
 
 def _parse_port(ports_str, default=80):
-    """Extract the first host port from Docker's port string like '0.0.0.0:8384->8384/tcp'"""
+    """Extract the first host port from Docker's port string."""
     if not ports_str or "->" not in ports_str:
         return default
     try:

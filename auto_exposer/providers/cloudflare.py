@@ -135,3 +135,24 @@ class CloudflareClient:
         except Exception as e:
             logger.error(f"Failed to update DNS record: {e}")
         return None
+
+    def delete_dns_record(self, record_id):
+        """Delete a DNS record by ID."""
+        if not self.zone_id:
+            return False
+        try:
+            res = requests.delete(
+                f"{self.base_url}/zones/{self.zone_id}/dns_records/{record_id}",
+                headers=self.headers,
+                timeout=10
+            )
+            data = res.json()
+            if data.get("success"):
+                logger.info(f"Deleted DNS record ID: {record_id}")
+                return True
+            else:
+                logger.error(f"Failed to delete DNS record ID {record_id}: {data.get('errors')}")
+                return False
+        except Exception as e:
+            logger.error(f"Cloudflare API error deleting record: {e}")
+            return False
