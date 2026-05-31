@@ -177,6 +177,9 @@ headers = accept, authorization, content-type, origin, referer, x-csrf-token
 max_document_size = 50000000
 EOF"
 
+# Fix CouchDB permissions (UID 5984 is used by CouchDB inside the container)
+pct exec $CTID -- chown -R 5984:5984 /opt/sync/couchdb
+
 # Create docker-compose.yml
 cat << EOF | pct exec $CTID -- tee /opt/sync/docker-compose.yml >/dev/null
 services:
@@ -185,7 +188,7 @@ services:
     container_name: couchdb
     restart: unless-stopped
     ports:
-      - 5984:5984
+      - '5984:5984'
     environment:
       - COUCHDB_USER=admin
       - COUCHDB_PASSWORD=$SYNC_PASS
@@ -208,10 +211,10 @@ services:
       - PGID=1000
       - TZ=Africa/Cairo
     ports:
-      - 8384:8384
-      - 22000:22000/tcp
-      - 22000:22000/udp
-      - 21027:21027/udp
+      - '8384:8384'
+      - '22000:22000/tcp'
+      - '22000:22000/udp'
+      - '21027:21027/udp'
     volumes:
       - ./syncthing/config:/config
       - /mnt/sync_data:/data1
