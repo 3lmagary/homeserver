@@ -17,7 +17,7 @@ def discover_non_docker(ctid, lxc_name, lxc_ip, base_domain):
     # First check if Docker is running - if so, skip non-docker discovery
     try:
         docker_check = subprocess.run(
-            ["pct", "exec", str(ctid), "--", "bash", "-c", "command -v docker && docker ps -q | head -1"],
+            ["/usr/sbin/pct", "exec", str(ctid), "--", "bash", "-c", "command -v docker && docker ps -q | head -1"],
             capture_output=True, text=True, timeout=10
         )
         if docker_check.returncode == 0 and docker_check.stdout.strip():
@@ -29,7 +29,7 @@ def discover_non_docker(ctid, lxc_name, lxc_ip, base_domain):
     # Scan for known listening ports using ss
     try:
         res = subprocess.run(
-            ["pct", "exec", str(ctid), "--", "bash", "-c",
+            ["/usr/sbin/pct", "exec", str(ctid), "--", "bash", "-c",
              "ss -tlnp 2>/dev/null | grep LISTEN | awk '{print $4}' | grep -oP '\\d+$' | sort -u"],
             capture_output=True, text=True, timeout=10
         )
@@ -46,7 +46,7 @@ def discover_non_docker(ctid, lxc_name, lxc_ip, base_domain):
         if 3000 in listening_ports or 80 in listening_ports:
             # Check if AdGuard Home is installed
             ag_check = subprocess.run(
-                ["pct", "exec", str(ctid), "--", "bash", "-c",
+                ["/usr/sbin/pct", "exec", str(ctid), "--", "bash", "-c",
                  "test -f /opt/AdGuardHome/AdGuardHome && echo yes"],
                 capture_output=True, text=True, timeout=5
             )

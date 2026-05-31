@@ -27,7 +27,7 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
     services = []
     try:
         cmd = [
-            "pct", "exec", str(ctid), "--", "bash", "-c",
+            "/usr/sbin/pct", "exec", str(ctid), "--", "bash", "-c",
             "docker ps --format '{{.Names}}|{{.Ports}}|{{.Labels}}'"
         ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)

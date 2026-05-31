@@ -3,7 +3,7 @@ from utils.logger import logger
 
 def get_lxcs():
     try:
-        result = subprocess.run(["pct", "list"], capture_output=True, text=True)
+        result = subprocess.run(["/usr/sbin/pct", "list"], capture_output=True, text=True)
         lines = result.stdout.splitlines()[1:]
         lxcs = []
         for line in lines:
@@ -17,7 +17,7 @@ def get_lxcs():
 
 def get_lxc_ip(ctid):
     try:
-        res = subprocess.run(["pct", "exec", str(ctid), "--", "ip", "-4", "addr", "show", "eth0"], capture_output=True, text=True)
+        res = subprocess.run(["/usr/sbin/pct", "exec", str(ctid), "--", "ip", "-4", "addr", "show", "eth0"], capture_output=True, text=True)
         for line in res.stdout.splitlines():
             if "inet " in line:
                 return line.split()[1].split('/')[0]

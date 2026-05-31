@@ -45,7 +45,7 @@ def get_proxmox_ip():
 def get_core_services_ctid():
     """Find the LXC Container ID for the Core-Services container."""
     try:
-        res = subprocess.run(["pct", "list"], capture_output=True, text=True, timeout=5)
+        res = subprocess.run(["/usr/sbin/pct", "list"], capture_output=True, text=True, timeout=5)
         if res.returncode == 0:
             for line in res.stdout.splitlines():
                 if "Core-Services" in line:
@@ -113,10 +113,10 @@ def update_homepage_config(all_services, ctid):
     
     try:
         # Ensure config directory exists in the LXC
-        subprocess.run(["pct", "exec", str(ctid), "--", "mkdir", "-p", "/opt/core/homepage"], check=True)
+        subprocess.run(["/usr/sbin/pct", "exec", str(ctid), "--", "mkdir", "-p", "/opt/core/homepage"], check=True)
         
         # Write services.yaml inside LXC
-        cmd = ["pct", "exec", str(ctid), "--", "bash", "-c", "cat > /opt/core/homepage/services.yaml"]
+        cmd = ["/usr/sbin/pct", "exec", str(ctid), "--", "bash", "-c", "cat > /opt/core/homepage/services.yaml"]
         res = subprocess.run(cmd, input=yaml_content, capture_output=True, text=True, timeout=10)
         if res.returncode == 0:
             logger.info("Successfully updated Homepage services.yaml in LXC")
@@ -157,7 +157,7 @@ layoutDesign:
   style: "glass"
 """
     try:
-        cmd = ["pct", "exec", str(ctid), "--", "bash", "-c", "cat > /opt/core/homepage/settings.yaml"]
+        cmd = ["/usr/sbin/pct", "exec", str(ctid), "--", "bash", "-c", "cat > /opt/core/homepage/settings.yaml"]
         res = subprocess.run(cmd, input=settings_yaml, capture_output=True, text=True, timeout=10)
         if res.returncode == 0:
             logger.info("Successfully updated Homepage settings.yaml in LXC")
@@ -432,7 +432,7 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
             if config_updated and settings_updated:
                 # Restart Homepage container to force reload configs cleanly
                 subprocess.run([
-                    "pct", "exec", str(core_ctid), "--", "bash", "-c",
+                    "/usr/sbin/pct", "exec", str(core_ctid), "--", "bash", "-c",
                     "cd /opt/core && docker compose restart homepage"
                 ], capture_output=True, timeout=20)
                 console.print("[green]✓ Homepage dashboard configuration and styling updated and reloaded.[/green]")
