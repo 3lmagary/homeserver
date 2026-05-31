@@ -392,6 +392,19 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
         if npm:
             if s.domain in existing_npm_hosts:
                 npm_status = "✓ Exists"
+                # Update existing host if advanced_config is set to ensure it's applied
+                if s.advanced_config:
+                    host_id = existing_npm_hosts[s.domain]
+                    npm.update_host(
+                        host_id=host_id,
+                        domain=s.domain,
+                        ip=s.ip,
+                        port=s.port,
+                        certificate_id=certificate_id,
+                        ssl_forced=(certificate_id > 0),
+                        advanced_config=s.advanced_config,
+                        forward_scheme=s.forward_scheme
+                    )
             else:
                 result = npm.create_host(
                     domain=s.domain,
@@ -406,6 +419,18 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
                     npm_status = "✓ Created"
                     npm_id = result.get("id", 0)
                     state.save(s.domain, s.ip, s.port, npm_id, {"name": s.name, "group": s.group})
+                    # Force update host immediately after creation to apply advanced_config
+                    if s.advanced_config:
+                        npm.update_host(
+                            host_id=npm_id,
+                            domain=s.domain,
+                            ip=s.ip,
+                            port=s.port,
+                            certificate_id=certificate_id,
+                            ssl_forced=(certificate_id > 0),
+                            advanced_config=s.advanced_config,
+                            forward_scheme=s.forward_scheme
+                        )
                 else:
                     npm_status = "✗ Failed"
 

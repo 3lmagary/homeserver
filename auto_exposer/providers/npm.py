@@ -136,3 +136,31 @@ class NPMClient:
         except Exception as e:
             logger.error(f"Error creating host {domain}: {e}")
             return None
+
+    def update_host(self, host_id, domain, ip, port, certificate_id=0, ssl_forced=False,
+                    advanced_config="", forward_scheme="http"):
+        payload = {
+            "domain_names": [domain],
+            "forward_scheme": forward_scheme,
+            "forward_host": ip,
+            "forward_port": port,
+            "access_list_id": 0,
+            "certificate_id": certificate_id,
+            "ssl_forced": ssl_forced,
+            "meta": {"letsencrypt_agree": False, "dns_challenge": False},
+            "advanced_config": advanced_config,
+            "block_exploits": True,
+            "allow_websocket_upgrade": True,
+            "http2_support": True
+        }
+        try:
+            res = self.session.put(f"{self.url}/api/nginx/proxy-hosts/{host_id}",
+                                   json=payload, timeout=15)
+            if res.status_code in [200, 201]:
+                return res.json()
+            else:
+                logger.error(f"Failed to update host {domain} (ID: {host_id}): {res.text[:200]}")
+                return None
+        except Exception as e:
+            logger.error(f"Error updating host {domain} (ID: {host_id}): {e}")
+            return None
