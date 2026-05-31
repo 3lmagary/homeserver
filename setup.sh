@@ -191,6 +191,15 @@ if ! grep -q "alias root=" "/home/$USERNAME/.zshrc"; then
     echo "alias root='sudo -i'" >> "/home/$USERNAME/.zshrc"
 fi
 
+if ! grep -q "alias pct=" "/home/$USERNAME/.zshrc"; then
+    echo -e "\n# Proxmox Aliases (Run seamlessly without typing sudo)" >> "/home/$USERNAME/.zshrc"
+    echo "alias pct='sudo pct'" >> "/home/$USERNAME/.zshrc"
+    echo "alias qm='sudo qm'" >> "/home/$USERNAME/.zshrc"
+    echo "alias pvesm='sudo pvesm'" >> "/home/$USERNAME/.zshrc"
+    echo "alias pvesh='sudo pvesh'" >> "/home/$USERNAME/.zshrc"
+    echo "alias pveam='sudo pveam'" >> "/home/$USERNAME/.zshrc"
+fi
+
 # 7) CLEANUP
 echo -e "${GREEN}[7/7] Cleaning system...${NC}"
 apt autoremove -y
