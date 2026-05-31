@@ -169,14 +169,14 @@ def clean(base_domain: str = None):
 
 
 @app.command()
-def sync(dry_run: bool = False, base_domain: str = None, skip_cleanup: bool = False):
-    """Discover services, clean up old configurations, configure NPM proxy hosts and Cloudflare DNS, and update Homepage."""
+def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = False):
+    """Discover services, check existing configurations, configure NPM proxy hosts and Cloudflare DNS, and update Homepage."""
     if not base_domain:
         base_domain = os.getenv("CF_DOMAIN", "example.com")
 
     console.print(Panel.fit(
         f"[bold blue]AutoExposer Sync[/bold blue]\n"
-        f"Domain: [cyan]{base_domain}[/cyan] | Dry Run: [yellow]{dry_run}[/yellow]",
+        f"Domain: [cyan]{base_domain}[/cyan] | Dry Run: [yellow]{dry_run}[/yellow] | Cleanup: [yellow]{run_cleanup}[/yellow]",
         border_style="blue"
     ))
 
@@ -258,8 +258,8 @@ def sync(dry_run: bool = False, base_domain: str = None, skip_cleanup: bool = Fa
                 console.print("[red]Failed to connect to Cloudflare. Check API token.[/red]")
                 cf = None
 
-    # ── Step 5: Clean up old configurations if not skipped ──
-    if not skip_cleanup:
+    # ── Step 5: Optional Cleanup (Only run if explicitly passed run_cleanup=True) ──
+    if run_cleanup:
         if npm:
             with console.status(f"[bold red]Cleaning up old NPM hosts for {base_domain}..."):
                 deleted = npm.cleanup_hosts(base_domain)
@@ -275,7 +275,16 @@ def sync(dry_run: bool = False, base_domain: str = None, skip_cleanup: bool = Fa
                             deleted_dns += 1
                 console.print(f"[green]✓ Cleaned up {deleted_dns} old Cloudflare A records.[/green]")
 
-    # ── Step 6: Determine NPM Internal IP for DNS routing ──
+    # ── Step 6: Get existing NPM hosts to avoid duplicates ──
+    existing_npm_hosts = {}
+    if npm:
+        with console.status("[bold green]Fetching existing NPM proxy hosts..."):
+            existing_hosts = npm.get_hosts()
+            for host in existing_hosts:
+                for domain in host.get("domain_names", []):
+                    existing_npm_hosts[domain] = host.get("id")
+
+    # ── Step 7: Determine NPM Internal IP for DNS routing ──
     npm_ip = None
     for s in all_services:
         if s.name == "Nginx Proxy Manager" or s.domain.startswith("npm."):
@@ -297,7 +306,7 @@ def sync(dry_run: bool = False, base_domain: str = None, skip_cleanup: bool = Fa
     else:
         console.print(f"[green]✓ Using NPM IP ({npm_ip}) for local DNS routing.[/green]")
 
-    # ── Step 7: Ensure Wildcard SSL Certificate via Let's Encrypt DNS Challenge ──
+    # ── Step 8: Ensure Wildcard SSL Certificate via Let's Encrypt DNS Challenge ──
     certificate_id = 0
     if npm and cf_token:
         with console.status(f"[bold green]Ensuring wildcard SSL certificate for *.{base_domain}..."):
@@ -308,7 +317,7 @@ def sync(dry_run: bool = False, base_domain: str = None, skip_cleanup: bool = Fa
             else:
                 console.print("[yellow]⚠ Failed to ensure wildcard SSL certificate. Proxy hosts will be created without SSL.[/yellow]")
 
-    # ── Step 8: Create NPM Proxy Hosts + Cloudflare DNS ──
+    # ── Step 9: Create NPM Proxy Hosts + Cloudflare DNS ──
     results_table = Table(title="Sync Results", border_style="green")
     results_table.add_column("Service", style="cyan")
     results_table.add_column("Domain", style="magenta")
@@ -321,23 +330,26 @@ def sync(dry_run: bool = False, base_domain: str = None, skip_cleanup: bool = Fa
         npm_status = "-"
         cf_status = "-"
 
-        # Create NPM Proxy Host
+        # Create NPM Proxy Host only if it doesn't already exist
         if npm:
-            result = npm.create_host(
-                domain=s.domain,
-                ip=s.ip,
-                port=s.port,
-                certificate_id=certificate_id,
-                ssl_forced=(certificate_id > 0),
-                advanced_config=s.advanced_config,
-                forward_scheme=s.forward_scheme
-            )
-            if result:
-                npm_status = "✓ Created"
-                npm_id = result.get("id", 0)
-                state.save(s.domain, s.ip, s.port, npm_id, {"name": s.name, "group": s.group})
+            if s.domain in existing_npm_hosts:
+                npm_status = "✓ Exists"
             else:
-                npm_status = "✗ Failed"
+                result = npm.create_host(
+                    domain=s.domain,
+                    ip=s.ip,
+                    port=s.port,
+                    certificate_id=certificate_id,
+                    ssl_forced=(certificate_id > 0),
+                    advanced_config=s.advanced_config,
+                    forward_scheme=s.forward_scheme
+                )
+                if result:
+                    npm_status = "✓ Created"
+                    npm_id = result.get("id", 0)
+                    state.save(s.domain, s.ip, s.port, npm_id, {"name": s.name, "group": s.group})
+                else:
+                    npm_status = "✗ Failed"
 
         # Create Cloudflare DNS Record (pointing to local NPM IP)
         if cf and npm_ip:
@@ -352,7 +364,7 @@ def sync(dry_run: bool = False, base_domain: str = None, skip_cleanup: bool = Fa
 
     console.print(results_table)
 
-    # ── Step 9: Generate and update Homepage configuration ──
+    # ── Step 10: Generate and update Homepage configuration ──
     core_ctid = get_core_services_ctid()
     if core_ctid:
         with console.status("[bold green]Updating Homepage Dashboard configuration..."):
