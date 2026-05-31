@@ -17,8 +17,10 @@ def init():
     pass
 
 @app.command()
-def sync(dry_run: bool = False, base_domain: str = "example.com"):
-    console.print(f"[bold blue]Starting AutoExposer Sync (Dry Run: {dry_run})[/bold blue]")
+def sync(dry_run: bool = False, base_domain: str = None):
+    if not base_domain:
+        base_domain = os.getenv("CF_DOMAIN", "example.com")
+    console.print(f"[bold blue]Starting AutoExposer Sync (Dry Run: {dry_run}, Domain: {base_domain})[/bold blue]")
     lxcs = get_lxcs()
     all_services = []
     

@@ -71,16 +71,30 @@ if [ ! -f ".env" ]; then
         read -p "Could not auto-detect NPM. Enter NPM URL (e.g. http://192.168.1.50:81): " AUTO_NPM_URL < /dev/tty
     fi
     
-    echo ""
-    read -p "NPM Email [Default: admin@example.com]: " NPM_EMAIL < /dev/tty
-    NPM_EMAIL=${NPM_EMAIL:-"admin@example.com"}
+    while true; do
+        echo ""
+        read -p "NPM Email [Default: admin@example.com]: " NPM_EMAIL < /dev/tty
+        NPM_EMAIL=${NPM_EMAIL:-"admin@example.com"}
+        
+        read -p "NPM Password [Default: changeme]: " NPM_PASSWORD < /dev/tty
+        NPM_PASSWORD=${NPM_PASSWORD:-"changeme"}
+        
+        echo -e "${BLUE}Verifying NPM Credentials...${NC}"
+        # Make a quick API call to NPM to get a token
+        TOKEN_RESP=$(curl -s -X POST "${AUTO_NPM_URL}/api/tokens" \
+            -H "Content-Type: application/json" \
+            -d "{\"identity\": \"$NPM_EMAIL\", \"secret\": \"$NPM_PASSWORD\"}")
+            
+        if echo "$TOKEN_RESP" | grep -q '"token"'; then
+            echo -e "${GREEN}✓ NPM Login Successful!${NC}"
+            break
+        else
+            echo -e "${RED}✗ Error: Invalid NPM Email or Password. Please try again.${NC}"
+        fi
+    done
     
-    read -sp "NPM Password [Default: changeme]: " NPM_PASSWORD < /dev/tty
-    NPM_PASSWORD=${NPM_PASSWORD:-"changeme"}
     echo ""
-    
-    echo ""
-    read -sp "Enter Cloudflare API Token: " CF_API_TOKEN < /dev/tty
+    read -p "Enter Cloudflare API Token: " CF_API_TOKEN < /dev/tty
     echo ""
     read -p "Enter Your Domain Name (e.g. example.com): " CF_DOMAIN < /dev/tty
     
@@ -91,7 +105,7 @@ NPM_PASSWORD=$NPM_PASSWORD
 CF_API_TOKEN=$CF_API_TOKEN
 CF_DOMAIN=$CF_DOMAIN
 EOF
-    echo -e "${GREEN}.env file created successfully!${NC}"
+    echo -e "${GREEN}✓ .env file created successfully!${NC}"
 fi
 
 echo -e "${GREEN}Launching AutoExposer...${NC}"
