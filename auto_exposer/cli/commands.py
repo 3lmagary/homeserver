@@ -66,14 +66,20 @@ def map_group_name(group_name, svc_name):
     if g_lower in ["media", "downloads"]:
         return "Media & Downloads"
         
-    # 2. Projects & DBs
+    # 2. Databases & Sync
     if any(x in name_lower for x in ["couchdb", "postgres", "mysql", "redis", "mongodb", "syncthing", "db", "database"]):
-        return "Projects & DBs"
+        return "Databases & Sync"
     if g_lower in ["sync & backup", "sync", "database", "databases", "automation", "cloud"]:
-        return "Projects & DBs"
+        return "Databases & Sync"
         
-    # 3. Infrastructure (Default)
-    return "Infrastructure"
+    # 3. Network & Security
+    if any(x in name_lower for x in ["nginx", "npm", "adguard", "vaultwarden", "bitwarden", "dns", "proxy"]):
+        return "Network & Security"
+    if g_lower in ["network", "security", "proxy", "dns"]:
+        return "Network & Security"
+        
+    # 4. System & Management (Default / fallback for Proxmox, Portainer)
+    return "System & Management"
 
 
 def update_homepage_config(all_services, ctid):
@@ -138,17 +144,20 @@ def update_homepage_settings(ctid):
 color: slate
 background:
   blur: sm
-  brightness: 45
-  image: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1964&auto=format&fit=crop"
+  brightness: 50
+  image: "https://images.unsplash.com/photo-1517511620798-cec156a5d15c?q=80&w=2070&auto=format&fit=crop"
 
 layout:
-  - Infrastructure:
-      style: row
-      columns: 5
-  - Media & Downloads:
+  - System & Management:
       style: row
       columns: 4
-  - Projects & DBs:
+  - Network & Security:
+      style: row
+      columns: 4
+  - Databases & Sync:
+      style: row
+      columns: 4
+  - Media & Downloads:
       style: row
       columns: 4
 
