@@ -149,17 +149,9 @@ background:
 
 layout:
   - System & Management:
-      style: row
-      columns: 4
   - Network & Security:
-      style: row
-      columns: 4
   - Databases & Sync:
-      style: row
-      columns: 4
   - Media & Downloads:
-      style: row
-      columns: 4
 
 hideVersion: false
 layoutDesign:
@@ -179,27 +171,17 @@ layoutDesign:
 
 
 def update_homepage_widgets(ctid):
-    """Write widgets.yaml configuration to Homepage LXC container to apply beautiful date/time, greeting, and system resource monitors."""
+    """Write widgets.yaml configuration to Homepage LXC container to apply system resource monitors and Google search."""
     if not ctid:
         return False
     
-    widgets_yaml = """- datetime:
-    text_size: xl
-    format:
-      timeStyle: short
-      dateStyle: long
-
-- greeting:
-    text: "مرحباً بك في خادمك المنزلي"
-    helpText: "لوحة التحكم وإدارة خدمات HomeServer"
-
-- resources:
+    widgets_yaml = """- resources:
     cpu: true
     memory: true
     disk: /
 
 - search:
-    provider: duckduckgo
+    provider: google
     target: _blank
 """
     try:
