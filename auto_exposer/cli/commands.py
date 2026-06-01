@@ -138,13 +138,13 @@ def update_homepage_settings(ctid):
 color: slate
 background:
   blur: sm
-  brightness: 50
-  image: "https://images.unsplash.com/photo-1517511620798-cec156a5d15c?q=80&w=2070&auto=format&fit=crop"
+  brightness: 45
+  image: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1964&auto=format&fit=crop"
 
 layout:
   - Infrastructure:
       style: row
-      columns: 4
+      columns: 5
   - Media & Downloads:
       style: row
       columns: 4
@@ -166,6 +166,43 @@ layoutDesign:
             logger.error(f"Failed to write settings.yaml to LXC: {res.stderr}")
     except Exception as e:
         logger.error(f"Error updating Homepage settings: {e}")
+    return False
+
+
+def update_homepage_widgets(ctid):
+    """Write widgets.yaml configuration to Homepage LXC container to apply beautiful date/time, greeting, and system resource monitors."""
+    if not ctid:
+        return False
+    
+    widgets_yaml = """- datetime:
+    text_size: xl
+    format:
+      timeStyle: short
+      dateStyle: long
+
+- greeting:
+    text: "مرحباً بك في خادمك المنزلي"
+    helpText: "لوحة التحكم وإدارة خدمات HomeServer"
+
+- resources:
+    cpu: true
+    memory: true
+    disk: /
+
+- search:
+    provider: duckduckgo
+    target: _blank
+"""
+    try:
+        cmd = ["/usr/sbin/pct", "exec", str(ctid), "--", "bash", "-c", "cat > /opt/core/homepage/widgets.yaml"]
+        res = subprocess.run(cmd, input=widgets_yaml, capture_output=True, text=True, timeout=10)
+        if res.returncode == 0:
+            logger.info("Successfully updated Homepage widgets.yaml in LXC")
+            return True
+        else:
+            logger.error(f"Failed to write widgets.yaml to LXC: {res.stderr}")
+    except Exception as e:
+        logger.error(f"Error updating Homepage widgets: {e}")
     return False
 
 
@@ -453,8 +490,9 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
         with console.status("[bold green]Updating Homepage Dashboard configuration..."):
             config_updated = update_homepage_config(all_services, core_ctid)
             settings_updated = update_homepage_settings(core_ctid)
+            widgets_updated = update_homepage_widgets(core_ctid)
             
-            if config_updated and settings_updated:
+            if config_updated and settings_updated and widgets_updated:
                 # Restart Homepage container to force reload configs cleanly
                 subprocess.run([
                     "/usr/sbin/pct", "exec", str(core_ctid), "--", "bash", "-c",
@@ -462,7 +500,7 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
                 ], capture_output=True, timeout=20)
                 console.print("[green]✓ Homepage dashboard configuration and styling updated and reloaded.[/green]")
             else:
-                console.print("[yellow]⚠ Failed to update Homepage configuration or settings.[/yellow]")
+                console.print("[yellow]⚠ Failed to update Homepage configuration, settings, or widgets.[/yellow]")
     else:
         console.print("[yellow]⚠ Core-Services LXC not found. Skipping Homepage dashboard update.[/yellow]")
 
