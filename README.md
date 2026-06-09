@@ -13,6 +13,20 @@
 
 Setting up a home lab from scratch can be repetitive and tedious. This repository provides **production-ready bash scripts** designed to rapidly configure Proxmox nodes and LXC containers with industry best practices, saving you time and ensuring a secure baseline.
 
+### 🌐 Network access (local-first)
+
+**By default, every service stays on your LAN** — each script assigns a static IP and you open it from your home network (e.g. `http://192.168.1.10:8080`). Nothing is published to the internet automatically.
+
+| Access method | Scripts | Use when |
+|---------------|---------|----------|
+| **LAN only** (default) | All setup scripts | Normal home use — NAS, media, DNS, Vaultwarden, etc. |
+| **Domain + HTTPS** (optional) | `setup_dashboard.sh` (AutoExposer) | You own a domain and want `*.yourdomain.com` via NPM + Cloudflare |
+| **Cloudflare Tunnel** (optional) | `setup_n8n.sh` | You need **n8n** (and Evolution API) reachable from outside; leave the token blank to keep it local too |
+
+> **Typical setup:** keep Core, NAS, Media, DNS, and Sync on the LAN; expose only **n8n** through a Cloudflare Tunnel if you need remote automation.
+
+**LXC shell access:** scripts do not ask for a container root password. Manage containers from the Proxmox host with `pct enter <CTID>` (requires host `root` / `sudo`).
+
 ---
 
 ## 🛠️ Available Scripts
@@ -92,7 +106,7 @@ A powerful script to instantly spin up a dedicated unprivileged LXC container ta
 - 🚀 **Automated LXC Creation:** Deploys a Debian 12 unprivileged container optimized for Docker (`nesting=1`, `keyctl=1`).
 - ⚙️ **Performance Tuned:** Automatically assigns 2 CPU Cores and 1GB RAM (with 0 swap) for smooth operation of multiple services.
 - 🕒 **Timezone Sync:** Syncs the container timezone with the Proxmox host to ensure logs and scheduled updates are accurate.
-- 🔐 **Secure Setup:** Prompts for a custom root password for the container to ensure secure local access.
+- 🔐 **Secure Setup:** Prompts for a **Vaultwarden admin password** (hashed with Argon2id). LXC root is not set via prompt — use `pct enter <CTID>` from the Proxmox host for console access.
 - 🐳 **Instant Docker Stack:** Pre-configures and launches a complete Docker compose stack with:
   - **Nginx Proxy Manager** (Reverse proxy & SSL)
   - **Homepage** (Beautiful custom dashboard)
@@ -113,7 +127,7 @@ sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup_co
 
 A highly advanced Python-based infrastructure management platform. It automatically discovers all your LXC and Docker services (using Traefik-like labels), generates Wildcard SSL certificates via Cloudflare, exposes them via Nginx Proxy Manager, and builds a beautiful Homepage dashboard — entirely hands-free.
 
-> **Note:** Run this script **after** deploying all your core services and purchasing a domain name.
+> **Note:** **Optional** — skip this if everything stays on the LAN (e.g. you only use a Cloudflare Tunnel for n8n). Run it **after** deploying core services **if** you have a domain and want HTTPS URLs for local services.
 
 <details>
 <summary><b>✨ View Features</b></summary>
