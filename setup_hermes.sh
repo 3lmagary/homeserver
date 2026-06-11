@@ -37,7 +37,10 @@ confirm_step() {
     local description="$2"
     echo -e ""
     echo -e "  ${BOLD}${YELLOW}➜  ${step_name}${NC}"
-    echo -e "  ${BLUE}│${NC}  ${CYAN}${description}${NC}"
+    while IFS= read -r line; do
+        echo -e "  ${BLUE}│${NC}  ${CYAN}${line}${NC}"
+    done <<< "$description"
+    echo -e "  ${BLUE}│${NC}"
     echo -ne "  ${BLUE}│${NC}  ${BOLD}${YELLOW}Proceed? (Y/n): ${NC}"
     read -r choice < /dev/tty
     case "$choice" in
@@ -124,7 +127,6 @@ if pct status "$CTID" &>/dev/null; then
     echo -e "${RED}Error: Suggested Container ID $CTID is already in use.${NC}"
     exit 1
 fi
-echo -e "Selected Container ID: ${YELLOW}$CTID${NC}"
 
 # 2. Storage Selection (Automatic)
 AVAILABLE_STORAGES=($(pvesm status -content rootdir | awk 'NR>1 {print $1}'))
@@ -133,7 +135,6 @@ if [ ${#AVAILABLE_STORAGES[@]} -eq 0 ]; then
     exit 1
 fi
 TARGET_STORAGE="${AVAILABLE_STORAGES[0]}"
-echo -e "Selected Storage: ${YELLOW}$TARGET_STORAGE${NC}"
 
 # 3. Network Configuration (Automatic Free IP Detection)
 GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
@@ -199,11 +200,8 @@ if [ -z "$STATIC_IP" ]; then
     echo -e "\n${RED}Error: Could not find any free IP address in the subnet automatically.${NC}"
     exit 1
 fi
-echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
-
 # 4. Disk Size & DNS (Automatic)
 DISK_SIZE="30"
-echo -e "Selected Disk Size: ${YELLOW}${DISK_SIZE}GB${NC}"
 
 # DNS Server Setup (Auto-detects AdGuard-DNS if present, otherwise uses Host DNS)
 DNS_SERVER=""
@@ -212,7 +210,6 @@ if [ -n "$ADGUARD_CTID" ]; then
     ADGUARD_IP=$(pct config "$ADGUARD_CTID" 2>/dev/null | grep -oE 'ip=[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | cut -d= -f2 || true)
     if [ -n "$ADGUARD_IP" ]; then
         DNS_SERVER="$ADGUARD_IP"
-        echo -e "Detected AdGuard-DNS at: ${YELLOW}$DNS_SERVER${NC} (configuring as container DNS)"
     fi
 fi
 
@@ -223,7 +220,20 @@ ENABLE_WATCHTOWER=true
 # ==================================================
 # [2/6] Create LXC Container
 # ==================================================
-if ! confirm_step "LXC Container Creation" "This step will download the Debian 12 container template (if not cached) and create LXC CT $CTID with IP $STATIC_IP and disk size ${DISK_SIZE}GB on storage '$TARGET_STORAGE'."; then
+LXC_DESC="This step will configure and create the LXC Container:
+  • Download Debian 12 template (if not cached)
+  • Create container ID $CTID ($LXC_NAME)
+  • Configure Static IP: $STATIC_IP/$CIDR (GW: $GW)
+  • Allocate Disk: $DISK_SIZE GB on '$TARGET_STORAGE'"
+if [ -n "$DNS_SERVER" ]; then
+LXC_DESC="${LXC_DESC}
+  • Set DNS Server: $DNS_SERVER (AdGuard-DNS)"
+else
+LXC_DESC="${LXC_DESC}
+  • Set DNS Server: Host Default"
+fi
+
+if ! confirm_step "LXC Container Creation" "$LXC_DESC"; then
     echo -e "${RED}LXC creation cancelled by user. Exiting.${NC}"
     exit 1
 fi
@@ -253,7 +263,11 @@ sleep 10
 # ==================================================
 # [3/6] Install Docker & Dependencies
 # ==================================================
-if ! confirm_step "Docker & Packages Installation" "This step installs git, curl, ca-certificates, and Docker inside the container CT $CTID."; then
+DOCKER_DESC="This step will prepare the container environment:
+  • Update system package repositories
+  • Install git, curl, ca-certificates, and gnupg
+  • Download and install Docker Engine & Compose"
+if ! confirm_step "Docker & Packages Installation" "$DOCKER_DESC"; then
     echo -e "${RED}Cannot proceed without installing Docker (required by Hermes). Exiting.${NC}"
     exit 1
 fi
@@ -270,7 +284,12 @@ TOKEN_ID=""
 TOKEN_SECRET=""
 PVE_API_URL=""
 
-if confirm_step "Proxmox API Credentials" "This step creates a dedicated API Token (Role: $PVE_ROLE_NAME, User: $PVE_USER) allowing Hermes to manage VMs/containers on this Proxmox node. Highly recommended for agentic capabilities."; then
+API_DESC="This step creates dedicated credentials allowing Hermes to manage Proxmox:
+  • Create Role: '$PVE_ROLE_NAME' with minimal safe management permissions
+  • Create User: '$PVE_USER' on this Proxmox host
+  • Generate API Token: '$PVE_USER!$PVE_TOKEN_NAME'
+  • Configure Proxmox MCP (Model Context Protocol) gateway"
+if confirm_step "Proxmox API Credentials" "$API_DESC"; then
     echo -e "\n${GREEN}[4/6] Setting up Proxmox API access...${NC}"
     
     # Create role if it doesn't exist
@@ -533,7 +552,12 @@ echo -e "  ${GREEN}✓${NC} Configuration files successfully created"
 # ==================================================
 # [6/6] Launch Services & Setup Wizard
 # ==================================================
-if ! confirm_step "Start Services" "This step launches all the Docker services inside the LXC container ($CTID)."; then
+SERVICES_DESC="This step launches all the containerized Docker services inside container $CTID:
+  • Start Hermes AI Agent Gateway (Port 8642)
+  • Start Hermes Dashboard Web UI (Port 9119)
+  • Start Proxmox MCP Server (Port 8380, if enabled)
+  • Start Portainer Agent (Port 9001) & Watchtower (Auto-updates)"
+if ! confirm_step "Start Services" "$SERVICES_DESC"; then
     echo -e "${RED}Services launch cancelled. Exiting.${NC}"
     exit 1
 fi
@@ -577,7 +601,11 @@ if [ -n "$CF_DOMAIN" ] && [ -d "/opt/homeserver/auto_exposer" ]; then
 fi
 
 # Official Wizard Confirmation
-if confirm_step "Launch Hermes Wizard" "Run the official, interactive 'hermes setup' wizard to finalize your LLM and API configuration?"; then
+WIZARD_DESC="Run the official interactive Hermes setup wizard:
+  • Connect to your preferred LLM provider (OpenAI, OpenRouter, etc.)
+  • Configure API access and agent settings
+  • Set up initial assistant personality"
+if confirm_step "Launch Hermes Wizard" "$WIZARD_DESC"; then
     echo -e "\nLaunching Setup Wizard..."
     pct exec $CTID -- bash -c "cd /opt/hermes && docker compose exec -it hermes hermes setup" < /dev/tty
 else
