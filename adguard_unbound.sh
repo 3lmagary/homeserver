@@ -152,9 +152,11 @@ sleep 2
 
 # Try to use python venv of auto_exposer to edit YAML cleanly
 if [ -d "/opt/homeserver/auto_exposer" ] && [ -f "/opt/homeserver/auto_exposer/venv/bin/python" ]; then
+    TEMP_YAML=$(mktemp)
+    pct pull $CTID /opt/AdGuardHome/AdGuardHome.yaml "$TEMP_YAML" 2>/dev/null || touch "$TEMP_YAML"
     /opt/homeserver/auto_exposer/venv/bin/python -c "
 import yaml
-config_path = '/var/lib/lxc/${CTID}/rootfs/opt/AdGuardHome/AdGuardHome.yaml'
+config_path = '${TEMP_YAML}'
 try:
     with open(config_path, 'r') as f:
         data = yaml.safe_load(f) or {}
@@ -169,10 +171,24 @@ data['dns']['upstream_dns'] = ['127.0.0.1:5335']
 with open(config_path, 'w') as f:
     yaml.dump(data, f)
 "
+    pct push $CTID "$TEMP_YAML" /opt/AdGuardHome/AdGuardHome.yaml
+    rm -f "$TEMP_YAML"
 else
-    # Fallback to sed if PyYAML/auto_exposer is not present
-    pct exec $CTID -- sed -i 's/address: 0.0.0.0:3000/address: 0.0.0.0:80/g' /opt/AdGuardHome/AdGuardHome.yaml 2>/dev/null || true
-    pct exec $CTID -- sed -i 's/bind_port: 3000/bind_port: 80/g' /opt/AdGuardHome/AdGuardHome.yaml 2>/dev/null || true
+    # Fallback if PyYAML/auto_exposer is not present
+    pct exec $CTID -- bash -c "
+        if [ ! -f /opt/AdGuardHome/AdGuardHome.yaml ]; then
+            cat <<EOF > /opt/AdGuardHome/AdGuardHome.yaml
+http:
+  address: 0.0.0.0:80
+dns:
+  upstream_dns:
+  - 127.0.0.1:5335
+EOF
+        else
+            sed -i 's/address: 0.0.0.0:3000/address: 0.0.0.0:80/g' /opt/AdGuardHome/AdGuardHome.yaml || true
+            sed -i 's/bind_port: 3000/bind_port: 80/g' /opt/AdGuardHome/AdGuardHome.yaml || true
+        fi
+    "
 fi
 
 pct exec $CTID -- systemctl start AdGuardHome &>/dev/null || true
