@@ -133,26 +133,54 @@ fi
 TARGET_STORAGE="${AVAILABLE_STORAGES[0]}"
 echo -e "Selected Storage: ${YELLOW}$TARGET_STORAGE${NC}"
 
-# 3. Network Configuration (With default value for Enter key)
+# 3. Network Configuration (Automatic Free IP Detection)
 GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
 CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
 if [ -z "$CIDR" ]; then CIDR="24"; fi
-EXAMPLE_IP=$(echo "$GW" | awk -F. '{print $1"."$2"."$3".35"}')
 
-echo -e "\nDetected Gateway: $GW"
-while true; do
-    read -p "Enter STATIC IP for the LXC Container (default: $EXAMPLE_IP): " USER_IP < /dev/tty
-    if [ -z "$USER_IP" ]; then
-        STATIC_IP="$EXAMPLE_IP"
-    else
-        STATIC_IP="$USER_IP"
-    fi
-    if validate_ip "$STATIC_IP"; then
-        break
-    else
-        echo -e "${RED}Invalid IP format. Enter a valid IPv4 address (e.g. 192.168.1.35).${NC}"
-    fi
-done
+echo -e "\nScanning network to find a free static IP automatically..."
+find_free_ip() {
+    local gw="$1"
+    local base_ip=$(echo "$gw" | cut -d. -f1-3)
+    # Get all IPs configured in any existing LXC/VM configs on Proxmox
+    local assigned_ips
+    assigned_ips=$(grep -r -o -E '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' /etc/pve/lxc/ /etc/pve/qemu-server/ 2>/dev/null | cut -d: -f2 | sort -u || true)
+    
+    # Scan from .50 to .250 to find a free IP
+    for i in {50..250}; do
+        local test_ip="${base_ip}.${i}"
+        
+        # Skip gateway
+        if [ "$test_ip" = "$gw" ]; then
+            continue
+        fi
+        
+        # Skip if in Proxmox configs (offline VM/LXC)
+        if echo "$assigned_ips" | grep -q -w "$test_ip"; then
+            continue
+        fi
+        
+        # Skip if pings
+        if ping -c 1 -W 1 "$test_ip" &>/dev/null; then
+            continue
+        fi
+        
+        # Skip if in local ARP table
+        if ip neigh show | grep -q -w "$test_ip"; then
+            continue
+        fi
+        
+        echo "$test_ip"
+        return 0
+    done
+    return 1
+}
+
+STATIC_IP=$(find_free_ip "$GW")
+if [ -z "$STATIC_IP" ]; then
+    echo -e "${RED}Error: Could not find any free IP address in the subnet automatically.${NC}"
+    exit 1
+fi
 echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
 
 # 4. Disk Size & DNS (Automatic / Enter default)
@@ -163,7 +191,7 @@ else
     DISK_SIZE="$USER_DISK_SIZE"
 fi
 
-DNS_SERVER="" # Use Host DNS by default
+DNS_SERVER="" # Use Host DNS by default (doesn't prompt user)
 
 # 5. Enable/Disable Supplementary Tools (Automatic Default)
 ENABLE_PORTAINER=true
