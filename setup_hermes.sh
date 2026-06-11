@@ -35,9 +35,11 @@ fi
 confirm_step() {
     local step_name="$1"
     local description="$2"
-    echo -e "\n${YELLOW}─── CONFIRMATION REQUIRED: ${step_name} ───${NC}"
-    echo -e "${CYAN}${description}${NC}"
-    read -p "Do you want to proceed? (y/n, default: y): " choice < /dev/tty
+    echo -e ""
+    echo -e "  ${BOLD}${YELLOW}➜  ${step_name}${NC}"
+    echo -e "  ${BLUE}│${NC}  ${CYAN}${description}${NC}"
+    echo -ne "  ${BLUE}│${NC}  ${BOLD}${YELLOW}Proceed? (Y/n): ${NC}"
+    read -r choice < /dev/tty
     case "$choice" in
         [nN][oO]|[nN])
             return 1
