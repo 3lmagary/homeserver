@@ -60,11 +60,48 @@ LOCAL_TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -n 
 GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
 CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
 if [ -z "$CIDR" ]; then CIDR="24"; fi
-EXAMPLE_IP=$(echo "$GW" | awk -F. '{print $1"."$2"."$3".30"}')
 
-echo -e "\nDetected Gateway: $GW"
-read -p "Enter STATIC IP for the LXC Container (e.g. $EXAMPLE_IP): " STATIC_IP < /dev/tty
-if [ -z "$STATIC_IP" ]; then echo -e "${RED}Static IP is required. Exiting.${NC}"; exit 1; fi
+echo -ne "\nScanning network to find a free static IP automatically..."
+find_free_ip() {
+    local gw="$1"
+    local base_ip=$(echo "$gw" | cut -d. -f1-3)
+    local assigned_ips
+    assigned_ips=$(grep -r -o -E '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' /etc/pve/lxc/ /etc/pve/qemu-server/ 2>/dev/null | cut -d: -f2 | sort -u || true)
+    local tmp_dir=$(mktemp -d)
+    for i in {50..150}; do
+        local test_ip="${base_ip}.${i}"
+        if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip"; then
+            continue
+        fi
+        ( ping -c 1 -W 1 "$test_ip" &>/dev/null && touch "${tmp_dir}/${i}" ) &
+    done
+    sleep 1.2
+    local free_ip=""
+    for i in {50..150}; do
+        local test_ip="${base_ip}.${i}"
+        if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip" || [ -f "${tmp_dir}/${i}" ]; then
+            continue
+        fi
+        if ip neigh show | grep -q -w "$test_ip"; then
+            continue
+        fi
+        free_ip="$test_ip"
+        break
+    done
+    rm -rf "$tmp_dir"
+    if [ -n "$free_ip" ]; then
+        echo "$free_ip"
+        return 0
+    fi
+    return 1
+}
+
+STATIC_IP=$(find_free_ip "$GW")
+if [ -z "$STATIC_IP" ]; then
+    echo -e "\n${RED}Error: Could not find any free IP address in the subnet automatically.${NC}"
+    exit 1
+fi
+echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
 
 echo -e "${YELLOW}Generating secure internal database password...${NC}"
 DB_PASS=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 24)
