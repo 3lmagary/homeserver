@@ -368,7 +368,15 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
             existing_hosts = npm.get_hosts()
             for host in existing_hosts:
                 for domain in host.get("domain_names", []):
-                    existing_npm_hosts[domain] = host.get("id")
+                    existing_npm_hosts[domain] = {
+                        "id": host.get("id"),
+                        "forward_host": host.get("forward_host"),
+                        "forward_port": host.get("forward_port"),
+                        "forward_scheme": host.get("forward_scheme"),
+                        "certificate_id": host.get("certificate_id"),
+                        "ssl_forced": host.get("ssl_forced"),
+                        "advanced_config": host.get("advanced_config")
+                    }
 
     # ── Step 7: Determine NPM Internal IP for DNS routing ──
     npm_ip = None
@@ -420,10 +428,21 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
         if npm:
             if s.domain in existing_npm_hosts:
                 npm_status = "✓ Exists"
-                # Update existing host if advanced_config is set to ensure it's applied
-                if s.advanced_config:
-                    host_id = existing_npm_hosts[s.domain]
-                    npm.update_host(
+                host_info = existing_npm_hosts[s.domain]
+                host_id = host_info["id"]
+                
+                # Check if IP, port, scheme, SSL, or advanced config has changed
+                needs_update = (
+                    host_info["forward_host"] != s.ip or
+                    host_info["forward_port"] != s.port or
+                    host_info["forward_scheme"] != s.forward_scheme or
+                    host_info["certificate_id"] != certificate_id or
+                    host_info["ssl_forced"] != (certificate_id > 0) or
+                    host_info["advanced_config"] != (s.advanced_config or "")
+                )
+                
+                if needs_update:
+                    update_res = npm.update_host(
                         host_id=host_id,
                         domain=s.domain,
                         ip=s.ip,
@@ -433,6 +452,11 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
                         advanced_config=s.advanced_config,
                         forward_scheme=s.forward_scheme
                     )
+                    if update_res:
+                        npm_status = "✓ Updated"
+                        state.save(s.domain, s.ip, s.port, host_id, {"name": s.name, "group": s.group})
+                    else:
+                        npm_status = "✗ Update Failed"
             else:
                 result = npm.create_host(
                     domain=s.domain,
