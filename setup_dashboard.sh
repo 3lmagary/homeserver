@@ -106,7 +106,9 @@ NPM_PASSWORD=$NPM_PASSWORD
 CF_API_TOKEN=$CF_API_TOKEN
 CF_DOMAIN=$CF_DOMAIN
 EOF
-    echo -e "${GREEN}✓ .env file created successfully!${NC}"
+    chmod 600 .env
+    chown root:root .env
+    echo -e "${GREEN}✓ .env file created and secured successfully!${NC}"
 fi
 
 echo -e "${GREEN}Launching AutoExposer...${NC}"

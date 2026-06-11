@@ -1,5 +1,11 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
+
+# ==========================================
+# n8n + Evolution API + Postgres Setup
+# ==========================================
+
+# Note: Telegram integration was intentionally removed for simplicity and privacy.
 
 GREEN="\033[0;32m"
 BLUE="\033[0;34m"
@@ -19,16 +25,33 @@ fi
 
 # Check if already exists
 LXC_NAME="n8n-Server"
-EXISTING_CTID=$(pct list | awk -v name="$LXC_NAME" '$3 == name {print $1}')
+EXISTING_CTID=$(pct list 2>/dev/null | awk -v name="$LXC_NAME" '$3 == name {print $1}' || true)
 if [ -n "$EXISTING_CTID" ]; then
     echo -e "${RED}Error: LXC '$LXC_NAME' already exists (ID: $EXISTING_CTID). Delete it first if you want to reinstall.${NC}"
     exit 1
 fi
 
-CTID=$(pvesh get /cluster/nextid)
+# Auto-Rollback Settings
+ROLLBACK_REQUIRED=true
+CTID=""
+
+cleanup_on_exit() {
+    local exit_code=$?
+    if [ "$ROLLBACK_REQUIRED" = true ]; then
+        echo -e "\n${RED}Error occurred during installation. Initiating auto-rollback...${NC}"
+        if [ -n "${CTID:-}" ] && pct status "$CTID" &>/dev/null; then
+            echo -e "${YELLOW}Stopping and destroying failed container $CTID ($LXC_NAME)...${NC}"
+            pct stop "$CTID" &>/dev/null || true
+            pct destroy "$CTID" &>/dev/null || true
+            echo -e "${GREEN}Rollback complete. Container deleted.${NC}"
+        fi
+    fi
+}
+
+trap cleanup_on_exit EXIT ERR
 
 echo -e "${GREEN}[1/4] Preparing LXC Container...${NC}"
-pveam update >/dev/null 2>&1
+pveam update >/dev/null 2>&1 || true
 TEMPLATE_PATH=$(pveam available -section system | grep debian-12-standard | awk '{print $2}' | head -n 1)
 if [ -z "$TEMPLATE_PATH" ]; then echo -e "${RED}Could not find Debian 12 template.${NC}"; exit 1; fi
 if ! pveam list local | grep -q debian-12; then pveam download local "$TEMPLATE_PATH" >/dev/null 2>&1; fi
@@ -46,14 +69,28 @@ if [ -z "$STATIC_IP" ]; then echo -e "${RED}Static IP is required. Exiting.${NC}
 echo -e "${YELLOW}Generating secure internal database password...${NC}"
 DB_PASS=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 24)
 
+PGADMIN_EMAIL=""
+PGADMIN_PASS=""
+
 echo -e "\n${YELLOW}Do you want to install pgAdmin? (Database Management UI)${NC}"
 echo "Most users don't need this unless they want to manually inspect the database."
 read -p "Install pgAdmin? (y/N): " INSTALL_PGADMIN < /dev/tty
 if [[ "$INSTALL_PGADMIN" =~ ^[Yy]$ ]]; then
     read -p "Enter an email for pgAdmin Web UI (e.g. admin@example.com): " PGADMIN_EMAIL < /dev/tty
     if [ -z "$PGADMIN_EMAIL" ]; then echo -e "${RED}pgAdmin email cannot be empty.${NC}"; exit 1; fi
-    read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
-    if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
+    
+    read -p "Do you want to auto-generate a secure pgAdmin password? (Y/n): " GEN_PG_PASS < /dev/tty
+    GEN_PG_PASS=${GEN_PG_PASS:-"Y"}
+    
+    if [[ "$GEN_PG_PASS" =~ ^[Yy]$ ]]; then
+        PGADMIN_PASS=$(openssl rand -base64 24)
+        echo -e "${GREEN}✓ Auto-generated pgAdmin Password: ${YELLOW}$PGADMIN_PASS${NC}"
+        echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
+        chmod 600 /root/generated-passwords.txt
+    else
+        read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
+        if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
+    fi
 fi
 
 read -sp "Enter Cloudflare Tunnel Token (leave blank if you don't use it yet): " CF_TOKEN < /dev/tty; echo
@@ -65,14 +102,12 @@ echo -e "${YELLOW}(Please save this key, you will need it to connect n8n to Evol
 read -p "Enter Disk Size in GB (default: 30): " DISK_SIZE < /dev/tty
 if [ -z "$DISK_SIZE" ]; then DISK_SIZE="30"; fi
 
-if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
-    read -p "Enter Telegram Bot Token: " TG_TOKEN < /dev/tty
-    read -p "Enter Telegram Chat ID: " TG_CHAT_ID < /dev/tty
-fi
-
 NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
 TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
 if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
+
+# Get Next ID
+CTID=$(pvesh get /cluster/nextid)
 
 echo "Creating n8n LXC $CTID on $TARGET_STORAGE with ${DISK_SIZE}GB disk..."
 pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:$DISK_SIZE" --hostname "$LXC_NAME" \
@@ -224,10 +259,6 @@ fi)
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 12 * * *
       - DOCKER_API_VERSION=1.40
-$(if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
-echo "      - WATCHTOWER_NOTIFICATIONS=shoutrrr"
-echo "      - WATCHTOWER_NOTIFICATION_URL=telegram://$TG_TOKEN@telegram/?channels=$TG_CHAT_ID"
-fi)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 EOF
@@ -252,6 +283,10 @@ if [[ "$INSTALL_PGADMIN" =~ ^[Yy]$ ]]; then
     pct exec $CTID -- bash -c "mkdir -p /opt/n8n/pgadmin_data && chown -R 5050:5050 /opt/n8n/pgadmin_data"
 fi
 pct exec $CTID -- bash -c "cd /opt/n8n && docker compose up -d"
+
+# Deployment successful - disable rollback
+ROLLBACK_REQUIRED=false
+trap - EXIT ERR
 
 echo -e "\n${BLUE}================================================================"
 echo -e " ✅ SETUP COMPLETE! TAKE A SCREENSHOT OF THIS BOX "
@@ -279,9 +314,9 @@ echo -e ""
 echo -e "${GREEN}▶ 5. Cloudflare Tunnel ${NC}"
 echo -e "   - Status:   ${YELLOW}Active (Go to Cloudflare dashboard to route your domains)${NC}"
 fi
-echo -e "${BLUE}================================================================${NC}"
+echo -e "================================================================"
 echo -e "${YELLOW}Note: The internal Postgres password was auto-generated and saved securely.${NC}"
-
+echo -e "\n\033[1;32mInfo:\033[0m Telegram integration was intentionally removed for simplicity and privacy."
 echo -e ""
 echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
-echo -e "To access this container's shell, run: \033[0;32mpct enter \$CTID\033[0m from your Proxmox host."
+echo -e "To access this container's shell, run: \033[0;32mpct enter $CTID\033[0m from your Proxmox host."

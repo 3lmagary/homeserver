@@ -1,4 +1,5 @@
 #!/bin/bash
+set -Eeuo pipefail
 
 # ==========================================
 # Proxmox Sync & Backup LXC Setup
@@ -20,25 +21,54 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+LXC_NAME="SyncServer"
+EXISTING_CTID=$(pct list 2>/dev/null | awk -v name="$LXC_NAME" '$3 == name {print $1}' || true)
+if [ -n "$EXISTING_CTID" ]; then
+    echo -e "${RED}Error: LXC '$LXC_NAME' already exists (ID: $EXISTING_CTID). Delete it first if you want to reinstall.${NC}"
+    exit 1
+fi
+
+# Auto-Rollback Settings
+ROLLBACK_REQUIRED=true
+CTID=""
+
+cleanup_on_exit() {
+    local exit_code=$?
+    if [ "$ROLLBACK_REQUIRED" = true ]; then
+        echo -e "\n${RED}Error occurred during installation. Initiating auto-rollback...${NC}"
+        if [ -n "${CTID:-}" ] && pct status "$CTID" &>/dev/null; then
+            echo -e "${YELLOW}Stopping and destroying failed container $CTID ($LXC_NAME)...${NC}"
+            pct stop "$CTID" &>/dev/null || true
+            pct destroy "$CTID" &>/dev/null || true
+            echo -e "${GREEN}Rollback complete. Container deleted.${NC}"
+        fi
+    fi
+}
+
+trap cleanup_on_exit EXIT ERR
+
 echo -e "${GREEN}[1/4] Storage Selection...${NC}"
 
-OS_BASES=$(lsblk -p -n -l -o NAME,FSTYPE,MOUNTPOINT | awk '$2=="LVM2_member" || $3=="/" || $3=="/boot" || $3=="/boot/efi" {print $1}' | sed -E 's/[0-9]+$//' | sort -u | paste -sd '|' -)
+OS_BASES=$(lsblk -p -n -l -o NAME,FSTYPE,MOUNTPOINT | awk '$2=="LVM2_member" || $3=="/" || $3=="/boot" || $3=="/boot/efi" {print $1}' | sed -E 's/[0-9]+$//' | sort -u | paste -sd '|' - || true)
 EXCLUDE_REGEX="^/dev/loop|^/dev/sr|^/dev/mapper|^/dev/pve|swap"
 if [ -n "$OS_BASES" ]; then
     EXCLUDE_REGEX="$EXCLUDE_REGEX|^($OS_BASES)"
 fi
-SAFE_DEVS=$(lsblk -o NAME,TYPE -p -n -l | grep -vE "$EXCLUDE_REGEX")
+SAFE_DEVS=$(lsblk -o NAME,TYPE -p -n -l | grep -vE "$EXCLUDE_REGEX" || true)
+
 mapfile -t DISK_PATHS < <(
-    echo "$SAFE_DEVS" | while read -r name type; do
-        if [ -z "$name" ]; then continue; fi
-        if [ "$type" == "disk" ]; then
-            if ! echo "$SAFE_DEVS" | grep -qE "^${name}[0-9a-zA-Z]+"; then
+    if [ -n "$SAFE_DEVS" ]; then
+        echo "$SAFE_DEVS" | while read -r name type; do
+            if [ -z "$name" ]; then continue; fi
+            if [ "$type" == "disk" ]; then
+                if ! echo "$SAFE_DEVS" | grep -qE "^${name}[0-9a-zA-Z]+"; then
+                    echo "$name"
+                fi
+            else
                 echo "$name"
             fi
-        else
-            echo "$name"
-        fi
-    done | sort
+        done | sort
+    fi
 )
 
 if [ ${#DISK_PATHS[@]} -eq 0 ]; then
@@ -49,14 +79,14 @@ else
     echo "[0] Skip - Use default LXC internal storage only"
     i=1
     for disk in "${DISK_PATHS[@]}"; do
-        D_SIZE=$(lsblk -o SIZE -n -d "$disk" 2>/dev/null | tr -d ' ')
+        D_SIZE=$(lsblk -o SIZE -n -d "$disk" 2>/dev/null | tr -d ' ' || echo "Unknown")
         D_FSTYPE=$(blkid -s TYPE -o value "$disk" 2>/dev/null || echo "Unknown/None")
-        D_MODEL=$(lsblk -o MODEL -n -d "$disk" 2>/dev/null | xargs)
+        D_MODEL=$(lsblk -o MODEL -n -d "$disk" 2>/dev/null | xargs || echo "Unknown")
         echo "[$i] $disk (Size: $D_SIZE, Format: $D_FSTYPE, Model: $D_MODEL)"
         ((i++))
     done
     read -p "Enter the number of the drive you want to use [Default: 0]: " DISK_NUM < /dev/tty
-    if [ "$DISK_NUM" == "0" ] || [ -z "$DISK_NUM" ]; then
+    if [ "${DISK_NUM:-0}" == "0" ]; then
         USE_EXTRA_DISK="no"
     elif [[ "$DISK_NUM" =~ ^[0-9]+$ ]] && [ "$DISK_NUM" -le "${#DISK_PATHS[@]}" ]; then
         USE_EXTRA_DISK="yes"
@@ -67,7 +97,7 @@ else
 fi
 
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
-    FS_TYPE=$(blkid -s TYPE -o value "$SELECTED_DISK" || true)
+    FS_TYPE=$(blkid -s TYPE -o value "$SELECTED_DISK" 2>/dev/null || true)
     if [ "$FS_TYPE" == "ext4" ] || [ "$FS_TYPE" == "xfs" ] || [ "$FS_TYPE" == "btrfs" ]; then
         echo -e "${GREEN}Drive is formatted as $FS_TYPE.${NC}"
     else
@@ -84,8 +114,12 @@ if [ "$USE_EXTRA_DISK" == "yes" ]; then
         fi
     fi
 
-    UUID=$(blkid -s UUID -o value "$SELECTED_DISK")
-    EXISTING_MOUNT=$(awk -v uuid="$UUID" '$1=="UUID="uuid {print $2}' /etc/fstab)
+    UUID=$(blkid -s UUID -o value "$SELECTED_DISK" 2>/dev/null || true)
+    if [ -z "$UUID" ]; then
+        echo -e "${RED}Could not read UUID. Cannot proceed with mounting.${NC}"
+        exit 1
+    fi
+    EXISTING_MOUNT=$(awk -v uuid="$UUID" '$1=="UUID="uuid {print $2}' /etc/fstab || true)
     if [ -n "$EXISTING_MOUNT" ]; then
         MOUNT_DIR="$EXISTING_MOUNT"
         echo -e "${YELLOW}Drive already mounted at $MOUNT_DIR.${NC}"
@@ -110,15 +144,27 @@ fi
 
 echo -e "\n${GREEN}[2/4] Preparing LXC Configuration...${NC}"
 
-read -p "Enter a password for the 'admin' user [Used for CouchDB & Syncthing]: " SYNC_PASS < /dev/tty
-if [ -z "$SYNC_PASS" ]; then
-    echo -e "${RED}Password cannot be empty. Defaulting to 'admin'.${NC}"
-    SYNC_PASS="admin"
+read -p "Do you want to auto-generate a secure CouchDB/Syncthing Password? (Y/n): " GEN_CHOICE < /dev/tty
+GEN_CHOICE=${GEN_CHOICE:-"Y"}
+
+if [[ "$GEN_CHOICE" =~ ^[Yy]$ ]]; then
+    SYNC_PASS=$(openssl rand -base64 24)
+    echo -e "${GREEN}✓ Auto-generated Password: ${YELLOW}$SYNC_PASS${NC}"
+    echo "CouchDB & Syncthing Admin Password: $SYNC_PASS" >> /root/generated-passwords.txt
+    chmod 600 /root/generated-passwords.txt
+else
+    read -sp "Enter a password for the 'admin' user: " SYNC_PASS < /dev/tty; echo
+    if [ -z "$SYNC_PASS" ]; then
+        echo -e "${RED}Password cannot be empty. Defaulting to 'admin'.${NC}"
+        SYNC_PASS="admin"
+    fi
 fi
 
+# Get Next ID
 CTID=$(pvesh get /cluster/nextid)
-pveam update >/dev/null 2>&1
+pveam update >/dev/null 2>&1 || true
 TEMPLATE_PATH=$(pveam available -section system | grep debian-12-standard | awk '{print $2}' | head -n 1)
+if [ -z "$TEMPLATE_PATH" ]; then echo -e "${RED}Could not find Debian 12 template.${NC}"; exit 1; fi
 if ! pveam list local | grep -q debian-12; then
     pveam download local "$TEMPLATE_PATH" >/dev/null 2>&1
 fi
@@ -139,10 +185,10 @@ NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
 
 TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
 if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
-LXC_NAME="SyncServer"
 
 echo -e "${GREEN}[3/4] Creating LXC Container $CTID...${NC}"
-pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --hostname "$LXC_NAME" --net0 $NET_CONFIG --unprivileged 1 --features nesting=1,keyctl=1
+pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --hostname "$LXC_NAME" --net0 $NET_CONFIG \
+    --unprivileged 1 --features nesting=1,keyctl=1
 
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
     echo "Binding $MOUNT_DIR to LXC..."
@@ -162,13 +208,13 @@ pct exec $CTID -- mkdir -p /opt/sync/couchdb
 pct exec $CTID -- mkdir -p /opt/sync/syncthing
 pct exec $CTID -- mkdir -p /mnt/sync_data
 
-# Create CouchDB CORS config
+# Create CouchDB CORS config restricted for security
 pct exec $CTID -- bash -c "cat << 'EOF' > /opt/sync/couchdb/cors.ini
 [httpd]
 enable_cors = true
 
 [cors]
-origins = *
+origins = app://obsidian.md, capacitor://localhost, http://localhost, http://127.0.0.1
 credentials = true
 methods = GET, PUT, POST, HEAD, DELETE
 headers = accept, authorization, content-type, origin, referer, x-csrf-token
@@ -242,7 +288,7 @@ services:
     environment:
       - WATCHTOWER_LABEL_ENABLE=true
       - WATCHTOWER_CLEANUP=true
-      - WATCHTOWER_SCHEDULE="0 0 12 * * *"
+      - WATCHTOWER_SCHEDULE=0 0 12 * * *
       - DOCKER_API_VERSION=1.40
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -250,6 +296,10 @@ EOF
 
 echo "Starting Docker Compose..."
 pct exec $CTID -- bash -c "cd /opt/sync && docker compose up -d"
+
+# Deployment successful - disable rollback
+ROLLBACK_REQUIRED=false
+trap - EXIT ERR
 
 LXC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
 
@@ -274,6 +324,9 @@ echo -e "${GREEN}2) CouchDB (Obsidian LiveSync)${NC}"
 echo -e "URL: ${YELLOW}http://$LXC_IP:5984/_utils/${NC}"
 echo -e "Username: admin"
 echo -e "Password: $SYNC_PASS"
+if [[ "$GEN_CHOICE" =~ ^[Yy]$ ]]; then
+echo -e "Note:     ${GREEN}Saved to /root/generated-passwords.txt on host${NC}"
+fi
 echo -e ""
 echo -e "${YELLOW}To configure Obsidian:${NC}"
 echo -e " 1. Install 'Self-hosted LiveSync' plugin."
@@ -284,4 +337,8 @@ echo -e " 5. Click 'Test' and then 'Check Database'. It will create the DB autom
 echo -e "${BLUE}==========================================${NC}"
 echo -e "  [+] Included Portainer Agent & Watchtower"
 echo -e "  [+] Included AutoExposer Labels"
+echo -e "  [+] CouchDB CORS Restricted to Obsidian schema and local origins"
 echo -e "${BLUE}==========================================${NC}"
+echo -e ""
+echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
+echo -e "To access this container's shell, run: \033[0;32mpct enter $CTID\033[0m from your Proxmox host."

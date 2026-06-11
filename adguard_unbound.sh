@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
 
 # ==========================================
 # Proxmox AdGuard Home + Unbound DNS Setup
@@ -22,13 +22,32 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 LXC_NAME="AdGuard-DNS"
-EXISTING_CTID=$(pct list | awk -v name="$LXC_NAME" '$3 == name {print $1}')
+EXISTING_CTID=$(pct list 2>/dev/null | awk -v name="$LXC_NAME" '$3 == name {print $1}' || true)
 
 if [ -n "$EXISTING_CTID" ]; then
     echo -e "${RED}Error: Found existing LXC container named $LXC_NAME (ID: $EXISTING_CTID).${NC}"
     echo "If you want to reinstall, please delete the old container first."
     exit 1
 fi
+
+# Auto-Rollback Settings
+ROLLBACK_REQUIRED=true
+CTID=""
+
+cleanup_on_exit() {
+    local exit_code=$?
+    if [ "$ROLLBACK_REQUIRED" = true ]; then
+        echo -e "\n${RED}Error occurred during installation. Initiating auto-rollback...${NC}"
+        if [ -n "${CTID:-}" ] && pct status "$CTID" &>/dev/null; then
+            echo -e "${YELLOW}Stopping and destroying failed container $CTID ($LXC_NAME)...${NC}"
+            pct stop "$CTID" &>/dev/null || true
+            pct destroy "$CTID" &>/dev/null || true
+            echo -e "${GREEN}Rollback complete. Container deleted.${NC}"
+        fi
+    fi
+}
+
+trap cleanup_on_exit EXIT ERR
 
 echo -e "${GREEN}[1/5] Preparing LXC Container...${NC}"
 
@@ -37,7 +56,7 @@ CTID=$(pvesh get /cluster/nextid)
 
 # Update templates and download debian 12
 echo "Downloading Debian 12 Template..."
-pveam update >/dev/null 2>&1
+pveam update >/dev/null 2>&1 || true
 TEMPLATE_PATH=$(pveam available -section system | grep debian-12-standard | awk '{print $2}' | head -n 1)
 
 if [ -z "$TEMPLATE_PATH" ]; then
@@ -69,6 +88,9 @@ if [ -z "$STATIC_IP" ]; then
     exit 1
 fi
 
+TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
+if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
+NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
 
 echo "Creating LXC Container $CTID on storage $TARGET_STORAGE..."
 pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --hostname "$LXC_NAME" --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1
@@ -119,6 +141,10 @@ pct exec $CTID -- bash -c "systemctl disable --now systemd-resolved 2>/dev/null 
 echo -e "${GREEN}[5/5] Installing AdGuard Home...${NC}"
 pct exec $CTID -- bash -c "curl -s -S -L https://raw.githubusercontent.com/AdguardTeam/AdGuardHome/master/scripts/install.sh | sh"
 
+# Deployment successful - disable rollback
+ROLLBACK_REQUIRED=false
+trap - EXIT ERR
+
 echo -e "${BLUE}=========================================="
 echo -e " ✅ DNS SERVER IS READY!"
 echo -e "==========================================${NC}"
@@ -142,4 +168,4 @@ echo -e "${BLUE}==========================================${NC}"
 
 echo -e ""
 echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
-echo -e "To access this container's shell, run: \033[0;32mpct enter \$CTID\033[0m from your Proxmox host."
+echo -e "To access this container's shell, run: \033[0;32mpct enter $CTID\033[0m from your Proxmox host."

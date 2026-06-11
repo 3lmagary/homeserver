@@ -1,5 +1,11 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
+
+# ==========================================
+# Immich Photo Server (Docker LXC)
+# ==========================================
+
+# Note: Telegram integration was intentionally removed for simplicity and privacy.
 
 GREEN="\033[0;32m"
 BLUE="\033[0;34m"
@@ -18,16 +24,33 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 LXC_NAME="Immich"
-EXISTING_CTID=$(pct list | awk -v name="$LXC_NAME" '$3 == name {print $1}')
+EXISTING_CTID=$(pct list 2>/dev/null | awk -v name="$LXC_NAME" '$3 == name {print $1}' || true)
 if [ -n "$EXISTING_CTID" ]; then
     echo -e "${RED}Error: LXC '$LXC_NAME' already exists (ID: $EXISTING_CTID).${NC}"
     exit 1
 fi
 
-CTID=$(pvesh get /cluster/nextid)
+# Auto-Rollback Settings
+ROLLBACK_REQUIRED=true
+CTID=""
+
+cleanup_on_exit() {
+    local exit_code=$?
+    if [ "$ROLLBACK_REQUIRED" = true ]; then
+        echo -e "\n${RED}Error occurred during installation. Initiating auto-rollback...${NC}"
+        if [ -n "${CTID:-}" ] && pct status "$CTID" &>/dev/null; then
+            echo -e "${YELLOW}Stopping and destroying failed container $CTID ($LXC_NAME)...${NC}"
+            pct stop "$CTID" &>/dev/null || true
+            pct destroy "$CTID" &>/dev/null || true
+            echo -e "${GREEN}Rollback complete. Container deleted.${NC}"
+        fi
+    fi
+}
+
+trap cleanup_on_exit EXIT ERR
 
 echo -e "${GREEN}[1/4] Preparing LXC Container...${NC}"
-pveam update >/dev/null 2>&1
+pveam update >/dev/null 2>&1 || true
 TEMPLATE_PATH=$(pveam available -section system | grep debian-12-standard | awk '{print $2}' | head -n 1)
 if [ -z "$TEMPLATE_PATH" ]; then echo -e "${RED}Could not find Debian 12 template.${NC}"; exit 1; fi
 if ! pveam list local | grep -q debian-12; then pveam download local "$TEMPLATE_PATH" >/dev/null 2>&1; fi
@@ -45,19 +68,17 @@ if [ -z "$STATIC_IP" ]; then echo -e "${RED}Static IP is required. Exiting.${NC}
 read -p "Enter Disk Size in GB (default: 20): " DISK_SIZE < /dev/tty
 if [ -z "$DISK_SIZE" ]; then DISK_SIZE="20"; fi
 
-if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
-    read -p "Enter Telegram Bot Token: " TG_TOKEN < /dev/tty
-    read -p "Enter Telegram Chat ID: " TG_CHAT_ID < /dev/tty
-fi
-
 NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
 TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
 if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
 
+# Get Next ID
+CTID=$(pvesh get /cluster/nextid)
+
 # Immich needs at least 2GB RAM for ML models
 echo "Creating Immich LXC $CTID on $TARGET_STORAGE with ${DISK_SIZE}GB disk (2GB RAM for AI models)..."
 pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:$DISK_SIZE" --hostname "$LXC_NAME" \
-    --memory 2048 --swap 512
+    --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1,keyctl=1 --memory 2048 --swap 512
 pct set $CTID -onboot 1
 pct start $CTID
 
@@ -104,16 +125,16 @@ cat << EOF | pct exec $CTID -- bash -c "cat >> /opt/immich/docker-compose.yml"
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 12 * * *
       - DOCKER_API_VERSION=1.40
-$(if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
-echo "      - WATCHTOWER_NOTIFICATIONS=shoutrrr"
-echo "      - WATCHTOWER_NOTIFICATION_URL=telegram://$TG_TOKEN@telegram/?channels=$TG_CHAT_ID"
-fi)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 EOF
 
 echo -e "${GREEN}[4/4] Starting Immich (this takes 3-5 minutes)...${NC}"
 pct exec $CTID -- bash -c "cd /opt/immich && docker compose up -d"
+
+# Deployment successful - disable rollback
+ROLLBACK_REQUIRED=false
+trap - EXIT ERR
 
 echo -e "\n${BLUE}=========================================="
 echo -e " ✅ Immich Deployed!"
@@ -122,7 +143,7 @@ echo -e "Access Immich at: ${YELLOW}http://${STATIC_IP}:2283${NC}"
 echo -e "\n${YELLOW}Note: The first startup takes 3-5 minutes."
 echo -e "Immich needs to initialize the database and download AI models.${NC}"
 echo -e "${YELLOW}Photos are stored at: /opt/immich/library (inside the container)${NC}"
-
+echo -e "\n\033[1;32mInfo:\033[0m Telegram integration was intentionally removed for simplicity and privacy."
 echo -e ""
 echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
-echo -e "To access this container's shell, run: \033[0;32mpct enter \$CTID\033[0m from your Proxmox host."
+echo -e "To access this container's shell, run: \033[0;32mpct enter $CTID\033[0m from your Proxmox host."

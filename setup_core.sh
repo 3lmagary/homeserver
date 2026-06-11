@@ -1,5 +1,11 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
+
+# ==========================================
+# Core Services Setup (Docker LXC)
+# ==========================================
+
+# Note: Telegram integration was intentionally removed for simplicity and privacy.
 
 GREEN="\033[0;32m"
 BLUE="\033[0;34m"
@@ -19,16 +25,33 @@ fi
 
 # Check if already exists
 LXC_NAME="Core-Services"
-EXISTING_CTID=$(pct list | awk -v name="$LXC_NAME" '$3 == name {print $1}')
+EXISTING_CTID=$(pct list 2>/dev/null | awk -v name="$LXC_NAME" '$3 == name {print $1}' || true)
 if [ -n "$EXISTING_CTID" ]; then
     echo -e "${RED}Error: LXC '$LXC_NAME' already exists (ID: $EXISTING_CTID). Delete it first if you want to reinstall.${NC}"
     exit 1
 fi
 
-CTID=$(pvesh get /cluster/nextid)
+# Auto-Rollback Settings
+ROLLBACK_REQUIRED=true
+CTID=""
+
+cleanup_on_exit() {
+    local exit_code=$?
+    if [ "$ROLLBACK_REQUIRED" = true ]; then
+        echo -e "\n${RED}Error occurred during installation. Initiating auto-rollback...${NC}"
+        if [ -n "${CTID:-}" ] && pct status "$CTID" &>/dev/null; then
+            echo -e "${YELLOW}Stopping and destroying failed container $CTID ($LXC_NAME)...${NC}"
+            pct stop "$CTID" &>/dev/null || true
+            pct destroy "$CTID" &>/dev/null || true
+            echo -e "${GREEN}Rollback complete. Container deleted.${NC}"
+        fi
+    fi
+}
+
+trap cleanup_on_exit EXIT ERR
 
 echo -e "${GREEN}[1/4] Preparing LXC Container...${NC}"
-pveam update >/dev/null 2>&1
+pveam update >/dev/null 2>&1 || true
 TEMPLATE_PATH=$(pveam available -section system | grep debian-12-standard | awk '{print $2}' | head -n 1)
 if [ -z "$TEMPLATE_PATH" ]; then echo -e "${RED}Could not find Debian 12 template.${NC}"; exit 1; fi
 if ! pveam list local | grep -q debian-12; then pveam download local "$TEMPLATE_PATH" >/dev/null 2>&1; fi
@@ -43,23 +66,31 @@ echo -e "\nDetected Gateway: $GW"
 read -p "Enter STATIC IP for Core Services (e.g. $EXAMPLE_IP): " STATIC_IP < /dev/tty
 if [ -z "$STATIC_IP" ]; then echo -e "${RED}Static IP is required. Exiting.${NC}"; exit 1; fi
 
-read -sp "Enter a password for Vaultwarden admin: " VW_ADMIN_PASS < /dev/tty; echo
-if [ -z "$VW_ADMIN_PASS" ]; then echo -e "${RED}Vaultwarden password cannot be empty.${NC}"; exit 1; fi
+echo -e "\n${YELLOW}Password Configuration for Vaultwarden:${NC}"
+read -p "Do you want to auto-generate a secure Vaultwarden Admin password? (Y/n): " GEN_CHOICE < /dev/tty
+GEN_CHOICE=${GEN_CHOICE:-"Y"}
+
+if [[ "$GEN_CHOICE" =~ ^[Yy]$ ]]; then
+    # Generate secure admin token
+    VW_ADMIN_PASS=$(openssl rand -base64 32)
+    echo -e "${GREEN}✓ Auto-generated Vaultwarden Admin Password: ${YELLOW}$VW_ADMIN_PASS${NC}"
+    echo "Vaultwarden Admin Password: $VW_ADMIN_PASS" >> /root/generated-passwords.txt
+    chmod 600 /root/generated-passwords.txt
+else
+    read -sp "Enter custom password for Vaultwarden admin: " VW_ADMIN_PASS < /dev/tty; echo
+    if [ -z "$VW_ADMIN_PASS" ]; then echo -e "${RED}Vaultwarden password cannot be empty.${NC}"; exit 1; fi
+fi
 
 read -p "Enter Disk Size in GB (default: 10): " DISK_SIZE < /dev/tty
 if [ -z "$DISK_SIZE" ]; then DISK_SIZE="10"; fi
 if ! [[ "$DISK_SIZE" =~ ^[0-9]+$ ]]; then echo -e "${RED}Disk size must be a number.${NC}"; exit 1; fi
 
-if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
-    read -p "Enter Telegram Bot Token: " TG_TOKEN < /dev/tty
-    if [ -z "$TG_TOKEN" ]; then echo -e "${RED}Telegram Bot Token cannot be empty.${NC}"; exit 1; fi
-    read -p "Enter Telegram Chat ID: " TG_CHAT_ID < /dev/tty
-    if [ -z "$TG_CHAT_ID" ]; then echo -e "${RED}Telegram Chat ID cannot be empty.${NC}"; exit 1; fi
-fi
-
 NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
 TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
 if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
+
+# Get Next ID
+CTID=$(pvesh get /cluster/nextid)
 
 echo "Creating Core LXC $CTID on $TARGET_STORAGE with ${DISK_SIZE}GB disk..."
 pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:$DISK_SIZE" --hostname "$LXC_NAME" \
@@ -148,16 +179,16 @@ services:
       - WATCHTOWER_CLEANUP=true
       - WATCHTOWER_SCHEDULE=0 0 12 * * *
       - DOCKER_API_VERSION=1.40
-$(if [[ "$ENABLE_TG" =~ ^[Yy]$ ]]; then
-echo "      - WATCHTOWER_NOTIFICATIONS=shoutrrr"
-echo "      - WATCHTOWER_NOTIFICATION_URL=telegram://$TG_TOKEN@telegram/?channels=$TG_CHAT_ID"
-fi)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 EOF
 
 echo -e "${GREEN}[4/4] Starting services...${NC}"
 pct exec $CTID -- bash -c "cd /opt/core && docker compose up -d"
+
+# Deployment successful - disable rollback
+ROLLBACK_REQUIRED=false
+trap - EXIT ERR
 
 echo -e "\n${BLUE}================================================================"
 echo -e " ✅ CORE SETUP COMPLETE! TAKE A SCREENSHOT OF THIS BOX "
@@ -170,6 +201,9 @@ echo -e "${GREEN}▶ Vaultwarden (Passwords) ${NC}"
 echo -e "   - URL:      ${YELLOW}http://${STATIC_IP}:8080${NC}"
 echo -e "   - Admin:    ${YELLOW}http://${STATIC_IP}:8080/admin${NC}"
 echo -e "   - Password: ${YELLOW}${VW_ADMIN_PASS}${NC}"
+if [[ "$GEN_CHOICE" =~ ^[Yy]$ ]]; then
+echo -e "   - Note:     ${GREEN}Saved to /root/generated-passwords.txt on host${NC}"
+fi
 echo -e ""
 echo -e "${GREEN}▶ Homepage (Dashboard) ${NC}"
 echo -e "   - URL:      ${YELLOW}http://${STATIC_IP}:3000${NC}"
@@ -180,9 +214,13 @@ echo -e ""
 echo -e "${GREEN}▶ Proxmox LXC Server (SSH/Console) ${NC}"
 echo -e "   - IP:       ${YELLOW}${STATIC_IP}${NC}"
 echo -e "   - User:     ${YELLOW}root${NC}"
-echo -e "================================================================${NC}"
+echo -e "================================================================"
+echo -e "${RED}⚠️  IMPORTANT SECURITY WARNING:${NC}"
+echo -e "You MUST change the default Nginx Proxy Manager credentials immediately"
+echo -e "on your first visit to secure your setup!"
+echo -e "================================================================"
 echo -e "\n${YELLOW}Note: Watchtower only updates containers that have the label 'com.centurylinklabs.watchtower.enable=true'${NC}"
-
+echo -e "\n\033[1;32mInfo:\033[0m Telegram integration was intentionally removed for simplicity and privacy."
 echo -e ""
 echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
-echo -e "To access this container's shell, run: \033[0;32mpct enter \$CTID\033[0m from your Proxmox host."
+echo -e "To access this container's shell, run: \033[0;32mpct enter $CTID\033[0m from your Proxmox host."
