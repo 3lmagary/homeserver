@@ -17,9 +17,28 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-# Get the script directory
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+# Handle execution via curl pipeline or locally
+set +u # Temporarily disable unbound variable check
+if [ -z "${BASH_SOURCE[0]}" ] || [ "${BASH_SOURCE[0]}" == "bash" ] || [ "${BASH_SOURCE[0]}" == "sh" ]; then
+    set -u
+    echo -e "${GREEN}Downloading/Updating Home Server repository...${NC}"
+    if ! command -v git &> /dev/null; then
+        apt-get update >/dev/null 2>&1 || true
+        apt-get install -y git >/dev/null 2>&1 || true
+    fi
+    
+    if [ -d "/opt/homeserver" ]; then
+        cd /opt/homeserver
+        git pull origin main -q || true
+    else
+        git clone https://github.com/3lmagary/homeserver.git /opt/homeserver -q
+        cd /opt/homeserver
+    fi
+else
+    set -u
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    cd "$SCRIPT_DIR"
+fi
 
 # Define known scripts and their descriptive titles
 declare -A SCRIPT_TITLES
