@@ -145,21 +145,71 @@ pct exec $CTID -- bash -c "curl -s -S -L https://raw.githubusercontent.com/Adgua
 ROLLBACK_REQUIRED=false
 trap - EXIT ERR
 
+# --- Configure AdGuard Home for Port 80 and Unbound ---
+echo -e "${GREEN}Configuring AdGuard Home to listen on port 80 and use Unbound...${NC}"
+pct exec $CTID -- systemctl stop AdGuardHome &>/dev/null || true
+sleep 2
+
+# Try to use python venv of auto_exposer to edit YAML cleanly
+if [ -d "/opt/homeserver/auto_exposer" ] && [ -f "/opt/homeserver/auto_exposer/venv/bin/python" ]; then
+    /opt/homeserver/auto_exposer/venv/bin/python -c "
+import yaml
+config_path = '/var/lib/lxc/${CTID}/rootfs/opt/AdGuardHome/AdGuardHome.yaml'
+try:
+    with open(config_path, 'r') as f:
+        data = yaml.safe_load(f) or {}
+except Exception:
+    data = {}
+if 'http' not in data or not isinstance(data['http'], dict):
+    data['http'] = {}
+data['http']['address'] = '0.0.0.0:80'
+if 'dns' not in data or not isinstance(data['dns'], dict):
+    data['dns'] = {}
+data['dns']['upstream_dns'] = ['127.0.0.1:5335']
+with open(config_path, 'w') as f:
+    yaml.dump(data, f)
+"
+else
+    # Fallback to sed if PyYAML/auto_exposer is not present
+    pct exec $CTID -- sed -i 's/address: 0.0.0.0:3000/address: 0.0.0.0:80/g' /opt/AdGuardHome/AdGuardHome.yaml 2>/dev/null || true
+    pct exec $CTID -- sed -i 's/bind_port: 3000/bind_port: 80/g' /opt/AdGuardHome/AdGuardHome.yaml 2>/dev/null || true
+fi
+
+pct exec $CTID -- systemctl start AdGuardHome &>/dev/null || true
+
+# --- AutoExposer Integration ---
+CF_DOMAIN=""
+if [ -f "/opt/homeserver/auto_exposer/.env" ]; then
+    CF_DOMAIN=$(grep -E "^CF_DOMAIN=" /opt/homeserver/auto_exposer/.env | cut -d= -f2- | tr -d '"'\'' ')
+fi
+
+if [ -n "$CF_DOMAIN" ] && [ -d "/opt/homeserver/auto_exposer" ]; then
+    echo -e "${GREEN}Triggering AutoExposer to automatically expose AdGuard via domain: adguard.${CF_DOMAIN}...${NC}"
+    (
+        cd /opt/homeserver/auto_exposer
+        ./venv/bin/python main.py sync
+    )
+fi
+
 echo -e "${BLUE}=========================================="
 echo -e " ✅ DNS SERVER IS READY!"
 echo -e "==========================================${NC}"
 echo -e "LXC Container ID : $CTID"
 echo -e "AdGuard IP       : ${YELLOW}$STATIC_IP${NC}"
 echo -e ""
-echo -e "To complete the setup, open your browser and go to:"
-echo -e "${YELLOW}http://$STATIC_IP:3000${NC}"
+
+if [ -n "$CF_DOMAIN" ]; then
+    echo -e "To complete the setup, open your browser and go to:"
+    echo -e "${YELLOW}https://adguard.$CF_DOMAIN${NC} (or ${YELLOW}http://adguard.$CF_DOMAIN${NC})"
+else
+    echo -e "To complete the setup, open your browser and go to:"
+    echo -e "${YELLOW}http://$STATIC_IP${NC}"
+fi
+
 echo -e ""
-echo -e " ⚠️ ${RED}IMPORTANT DURING SETUP:${NC} ⚠️"
-echo -e "When asked for the 'Upstream DNS servers', delete everything and put EXACTLY this:"
-echo -e "${YELLOW}127.0.0.1:5335${NC}"
-echo -e ""
-echo -e "For 'Bootstrap DNS servers', put:"
-echo -e "${YELLOW}1.1.1.1${NC}"
+echo -e " ⚠️  ${RED}NOTE DURING SETUP:${NC}"
+echo -e "The DNS upstream server has been pre-configured to: ${YELLOW}127.0.0.1:5335${NC} (Unbound)."
+echo -e "The setup wizard is configured to run on port 80."
 echo -e ""
 echo -e "${GREEN}▶ Proxmox LXC Server (SSH/Console) ${NC}"
 echo -e "   - IP:       ${YELLOW}${STATIC_IP}${NC}"
