@@ -29,6 +29,18 @@ Setting up a home lab from scratch can be repetitive and tedious. This repositor
 
 ---
 
+## 🎛️ Interactive Unified Menu (`menu.sh`)
+
+The easiest and recommended way to use this repository is via the new interactive menu. It automatically discovers all available setup scripts and lets you run them with a single keystroke, without having to copy-paste multiple commands.
+
+**🚀 Run Command:**
+*(Run from your Proxmox Host as a regular sudo user)*
+```bash
+sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/menu.sh | sudo bash
+```
+
+---
+
 ## 🛠️ Available Scripts
 
 ### 1️⃣ Proxmox Base Setup (`setup.sh`)
@@ -190,6 +202,27 @@ A powerful script to instantly spin up a dedicated unprivileged LXC container ta
 *(Run from your Proxmox Host as root or using sudo)*
 ```bash
 sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/sync_setup.sh | sudo bash
+```
+
+---
+
+### 7️⃣ Proxmox Backup Server (`setup_pbs.sh`)
+
+A highly optimized script to deploy **Proxmox Backup Server (PBS)** natively inside a Debian 12 LXC container for comprehensive, incremental backups of your entire Proxmox environment.
+
+<details>
+<summary><b>✨ View Features</b></summary>
+
+- 🚀 **Automated LXC Creation:** Deploys a Debian 12 unprivileged container tailored for PBS.
+- 💾 **Datastore Handling:** Includes specific guidance and preparation for mounting external SMB/NFS datastores securely via Proxmox Host bind-mounts.
+- 🛡️ **Resource Optimized:** Configures optimal CPU and RAM settings for backup server deduplication workloads.
+- 🔐 **Automated Auth:** Generates and sets up the PBS `root@pam` password securely during installation.
+</details>
+
+**🚀 Run Command:**
+*(Run from your Proxmox Host as a regular sudo user)*
+```bash
+sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup_pbs.sh | sudo bash
 ```
 
 ---
