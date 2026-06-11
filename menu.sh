@@ -53,10 +53,11 @@ SCRIPT_TITLES["setup_n8n.sh"]="n8n Automation + Evolution API Stack"
 SCRIPT_TITLES["sync_setup.sh"]="Syncthing & CouchDB Setup (Obsidian LiveSync)"
 SCRIPT_TITLES["setup_vpn_torrent.sh"]="VPN-secured qBittorrent (Gluetun + qBittorrent)"
 SCRIPT_TITLES["setup_pbs.sh"]="Proxmox Backup Server (Native LXC)"
+SCRIPT_TITLES["setup_hermes.sh"]="Hermes AI Agent Stack (Autonomous AI Agent & Dashboard)"
 
 # Dynamically scan for available scripts
 AVAILABLE_SCRIPTS=()
-for key in "setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_immich.sh" "setup_media.sh" "setup_n8n.sh" "sync_setup.sh" "setup_vpn_torrent.sh" "setup_pbs.sh"; do
+for key in "setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_immich.sh" "setup_media.sh" "setup_n8n.sh" "sync_setup.sh" "setup_vpn_torrent.sh" "setup_pbs.sh" "setup_hermes.sh"; do
     if [ -f "$key" ]; then
         AVAILABLE_SCRIPTS+=("$key")
     fi
