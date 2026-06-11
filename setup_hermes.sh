@@ -116,38 +116,24 @@ if [ -n "$EXISTING_CTID" ]; then
     exit 1
 fi
 
-# 1. CTID Selection
-SUGGESTED_CTID=$(pvesh get /cluster/nextid)
-read -p "Enter LXC Container ID (default: $SUGGESTED_CTID): " USER_CTID < /dev/tty
-if [ -z "$USER_CTID" ]; then
-    CTID="$SUGGESTED_CTID"
-else
-    CTID="$USER_CTID"
-fi
+# 1. CTID Selection (Automatic)
+CTID=$(pvesh get /cluster/nextid)
 if pct status "$CTID" &>/dev/null; then
-    echo -e "${RED}Error: Container ID $CTID is already in use.${NC}"
+    echo -e "${RED}Error: Suggested Container ID $CTID is already in use.${NC}"
     exit 1
 fi
+echo -e "Selected Container ID: ${YELLOW}$CTID${NC}"
 
-# 2. Storage Selection
+# 2. Storage Selection (Automatic)
 AVAILABLE_STORAGES=($(pvesm status -content rootdir | awk 'NR>1 {print $1}'))
 if [ ${#AVAILABLE_STORAGES[@]} -eq 0 ]; then
     echo -e "${RED}No storages supporting rootdir (LXC disk) found!${NC}"
     exit 1
 fi
-echo -e "\nAvailable Proxmox storages for LXC:"
-for i in "${!AVAILABLE_STORAGES[@]}"; do
-    echo -e "  [$i] ${AVAILABLE_STORAGES[$i]}"
-done
-read -p "Select storage index (default: 0 [${AVAILABLE_STORAGES[0]}]): " storage_idx < /dev/tty
-if [ -z "$storage_idx" ] || [ -z "${AVAILABLE_STORAGES[$storage_idx]:-}" ]; then
-    TARGET_STORAGE="${AVAILABLE_STORAGES[0]}"
-else
-    TARGET_STORAGE="${AVAILABLE_STORAGES[$storage_idx]}"
-fi
+TARGET_STORAGE="${AVAILABLE_STORAGES[0]}"
 echo -e "Selected Storage: ${YELLOW}$TARGET_STORAGE${NC}"
 
-# 3. Network Configuration
+# 3. Network Configuration (With default value for Enter key)
 GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
 CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
 if [ -z "$CIDR" ]; then CIDR="24"; fi
@@ -155,10 +141,11 @@ EXAMPLE_IP=$(echo "$GW" | awk -F. '{print $1"."$2"."$3".35"}')
 
 echo -e "\nDetected Gateway: $GW"
 while true; do
-    read -p "Enter STATIC IP for the LXC Container (e.g. $EXAMPLE_IP): " STATIC_IP < /dev/tty
-    if [ -z "$STATIC_IP" ]; then
-        echo -e "${RED}Static IP is required.${NC}"
-        continue
+    read -p "Enter STATIC IP for the LXC Container (default: $EXAMPLE_IP): " USER_IP < /dev/tty
+    if [ -z "$USER_IP" ]; then
+        STATIC_IP="$EXAMPLE_IP"
+    else
+        STATIC_IP="$USER_IP"
     fi
     if validate_ip "$STATIC_IP"; then
         break
@@ -166,29 +153,21 @@ while true; do
         echo -e "${RED}Invalid IP format. Enter a valid IPv4 address (e.g. 192.168.1.35).${NC}"
     fi
 done
+echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
 
-# 4. Disk Size & DNS
-read -p "Enter Disk Size in GB (default: 30): " DISK_SIZE < /dev/tty
-if [ -z "$DISK_SIZE" ]; then DISK_SIZE="30"; fi
-
-read -p "Enter DNS server IP (optional, press Enter to use Host DNS): " DNS_SERVER < /dev/tty
-if [ -n "$DNS_SERVER" ] && ! validate_ip "$DNS_SERVER"; then
-    echo -e "${YELLOW}Invalid DNS IP format. Falling back to Host DNS.${NC}"
-    DNS_SERVER=""
+# 4. Disk Size & DNS (Automatic / Enter default)
+read -p "Enter Disk Size in GB (default: 30): " USER_DISK_SIZE < /dev/tty
+if [ -z "$USER_DISK_SIZE" ]; then
+    DISK_SIZE="30"
+else
+    DISK_SIZE="$USER_DISK_SIZE"
 fi
 
-# 5. Enable/Disable Supplementary Tools
+DNS_SERVER="" # Use Host DNS by default
+
+# 5. Enable/Disable Supplementary Tools (Automatic Default)
 ENABLE_PORTAINER=true
-read -p "Install Portainer Agent to manage container lifecycle? (y/n, default: y): " choice_portainer < /dev/tty
-if [[ "$choice_portainer" =~ [nN][oO]|[nN] ]]; then
-    ENABLE_PORTAINER=false
-fi
-
 ENABLE_WATCHTOWER=true
-read -p "Install Watchtower for auto-updating Hermes images? (y/n, default: y): " choice_watchtower < /dev/tty
-if [[ "$choice_watchtower" =~ [nN][oO]|[nN] ]]; then
-    ENABLE_WATCHTOWER=false
-fi
 
 # ==================================================
 # [2/6] Create LXC Container
