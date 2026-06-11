@@ -140,7 +140,7 @@ GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
 CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
 if [ -z "$CIDR" ]; then CIDR="24"; fi
 
-echo -e "\nScanning network to find a free static IP automatically..."
+echo -ne "\nScanning network to find a free static IP automatically..."
 find_free_ip() {
     local gw="$1"
     local base_ip=$(echo "$gw" | cut -d. -f1-3)
@@ -148,39 +148,55 @@ find_free_ip() {
     local assigned_ips
     assigned_ips=$(grep -r -o -E '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' /etc/pve/lxc/ /etc/pve/qemu-server/ 2>/dev/null | cut -d: -f2 | sort -u || true)
     
-    # Scan from .50 to .250 to find a free IP
-    for i in {50..250}; do
+    # Create a temp directory to track ping results
+    local tmp_dir=$(mktemp -d)
+    
+    # Spawn background pings for range .50 to .150 (extremely fast)
+    for i in {50..150}; do
         local test_ip="${base_ip}.${i}"
         
-        # Skip gateway
-        if [ "$test_ip" = "$gw" ]; then
+        # Skip gateway and Proxmox configurations immediately without pinging
+        if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip"; then
             continue
         fi
         
-        # Skip if in Proxmox configs (offline VM/LXC)
-        if echo "$assigned_ips" | grep -q -w "$test_ip"; then
+        # Ping in parallel, create marker file if IP is active
+        ( ping -c 1 -W 1 "$test_ip" &>/dev/null && touch "${tmp_dir}/${i}" ) &
+    done
+    
+    # Wait 1.2 seconds for background checks to complete
+    sleep 1.2
+    
+    # Now find the first IP that didn't respond to ping and isn't in the local ARP table
+    local free_ip=""
+    for i in {50..150}; do
+        local test_ip="${base_ip}.${i}"
+        
+        if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip" || [ -f "${tmp_dir}/${i}" ]; then
             continue
         fi
         
-        # Skip if pings
-        if ping -c 1 -W 1 "$test_ip" &>/dev/null; then
-            continue
-        fi
-        
-        # Skip if in local ARP table
+        # Check local ARP table
         if ip neigh show | grep -q -w "$test_ip"; then
             continue
         fi
         
-        echo "$test_ip"
-        return 0
+        free_ip="$test_ip"
+        break
     done
+    
+    rm -rf "$tmp_dir"
+    
+    if [ -n "$free_ip" ]; then
+        echo "$free_ip"
+        return 0
+    fi
     return 1
 }
 
 STATIC_IP=$(find_free_ip "$GW")
 if [ -z "$STATIC_IP" ]; then
-    echo -e "${RED}Error: Could not find any free IP address in the subnet automatically.${NC}"
+    echo -e "\n${RED}Error: Could not find any free IP address in the subnet automatically.${NC}"
     exit 1
 fi
 echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
