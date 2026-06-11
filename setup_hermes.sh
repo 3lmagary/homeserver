@@ -191,7 +191,16 @@ else
     DISK_SIZE="$USER_DISK_SIZE"
 fi
 
-DNS_SERVER="" # Use Host DNS by default (doesn't prompt user)
+# DNS Server Setup (Auto-detects AdGuard-DNS if present, otherwise uses Host DNS)
+DNS_SERVER=""
+ADGUARD_CTID=$(pct list 2>/dev/null | awk '$3 == "AdGuard-DNS" {print $1}' || true)
+if [ -n "$ADGUARD_CTID" ]; then
+    ADGUARD_IP=$(pct config "$ADGUARD_CTID" 2>/dev/null | grep -oE 'ip=[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | cut -d= -f2 || true)
+    if [ -n "$ADGUARD_IP" ]; then
+        DNS_SERVER="$ADGUARD_IP"
+        echo -e "Detected AdGuard-DNS at: ${YELLOW}$DNS_SERVER${NC} (configuring as container DNS)"
+    fi
+fi
 
 # 5. Enable/Disable Supplementary Tools (Automatic Default)
 ENABLE_PORTAINER=true
