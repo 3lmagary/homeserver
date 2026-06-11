@@ -183,13 +183,9 @@ if [ -z "$STATIC_IP" ]; then
 fi
 echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
 
-# 4. Disk Size & DNS (Automatic / Enter default)
-read -p "Enter Disk Size in GB (default: 30): " USER_DISK_SIZE < /dev/tty
-if [ -z "$USER_DISK_SIZE" ]; then
-    DISK_SIZE="30"
-else
-    DISK_SIZE="$USER_DISK_SIZE"
-fi
+# 4. Disk Size & DNS (Automatic)
+DISK_SIZE="30"
+echo -e "Selected Disk Size: ${YELLOW}${DISK_SIZE}GB${NC}"
 
 # DNS Server Setup (Auto-detects AdGuard-DNS if present, otherwise uses Host DNS)
 DNS_SERVER=""
