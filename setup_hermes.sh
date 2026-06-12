@@ -436,6 +436,59 @@ else
     echo -e "\n${YELLOW}Skipping Proxmox API Token setup. Hermes will run in stand-alone mode.${NC}"
 fi
 
+    # Setup Docker MCP Server and DuckDuckGo MCP Server files
+    echo -e "\nSetting up Docker and DuckDuckGo MCP Servers..."
+    pct exec $CTID -- mkdir -p /opt/hermes/docker-mcp
+    pct exec $CTID -- mkdir -p /opt/hermes/duckduckgo-mcp
+
+    # Write docker-mcp server wrapper
+    cat << 'SERVEREOF' | pct exec $CTID -- tee /opt/hermes/docker-mcp/server.py >/dev/null
+import asyncio
+import docker
+import uvicorn
+from starlette.applications import Starlette
+from starlette.routing import Route, Mount
+from mcp.server.sse import SseServerTransport
+from mcp_server_docker.server import app, ServerSettings
+import mcp_server_docker.server as server_mod
+
+server_mod._docker = docker.from_env()
+server_mod._server_settings = ServerSettings()
+sse = SseServerTransport('/messages/')
+
+async def handle_sse(request):
+    async with sse.connect_sse(request.scope, request.receive, request._send) as (read, write):
+        await app.run(read, write, app.create_initialization_options())
+
+starlette_app = Starlette(routes=[
+    Route('/sse', endpoint=handle_sse, methods=['GET']),
+    Mount('/messages/', app=sse.handle_post_message)
+])
+
+if __name__ == '__main__':
+    uvicorn.run(starlette_app, host='0.0.0.0', port=8000)
+SERVEREOF
+
+    # Write docker-mcp Dockerfile
+    cat << 'DOCKERMCPEOF' | pct exec $CTID -- tee /opt/hermes/docker-mcp/Dockerfile >/dev/null
+FROM python:3.12-slim
+WORKDIR /app
+RUN pip install --no-cache-dir mcp-server-docker docker uvicorn starlette
+COPY server.py .
+EXPOSE 8000
+CMD ["python", "server.py"]
+DOCKERMCPEOF
+
+    # Write duckduckgo-mcp Dockerfile
+    cat << 'DDGMCPEOF' | pct exec $CTID -- tee /opt/hermes/duckduckgo-mcp/Dockerfile >/dev/null
+FROM python:3.12-slim
+RUN pip install --no-cache-dir duckduckgo-mcp-server
+EXPOSE 8000
+CMD ["python", "-c", "import sys; from duckduckgo_mcp_server.server import mcp, main; mcp.settings.transport_security.enable_dns_rebinding_protection = False if mcp.settings.transport_security else False; sys.argv = ['duckduckgo-mcp-server', '--transport', 'sse', '--host', '0.0.0.0', '--port', '8000']; main()"]
+DDGMCPEOF
+
+    echo -e "  ${GREEN}✓${NC} Docker and DuckDuckGo MCP Servers configured"
+
 # ==================================================
 # [5/6] Write Docker Compose & Config Files
 # ==================================================
@@ -503,20 +556,18 @@ cat << 'COMPOSEEOF' >> "$COMPOSE_FILE"
       - hermes-net
 
   docker-mcp:
-    image: python:3.12-slim
+    build: ./docker-mcp
     container_name: docker-mcp
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: sh -c "pip install --no-cache-dir mcp-server-docker && python -c \"import asyncio, docker, uvicorn; from starlette.applications import Starlette; from starlette.routing import Route; from mcp.server.sse import SseServerTransport; from mcp_server_docker.server import app, ServerSettings; import mcp_server_docker.server as server_mod; server_mod._docker = docker.from_env(); server_mod._server_settings = ServerSettings(); sse = SseServerTransport('/messages/'); exec(\\\"async def handle_sse(request):\\\\n    async with sse.connect_sse(request.scope, request.receive, request._send) as (read, write):\\\\n        await app.run(read, write, app.create_initialization_options())\\\"); starlette_app = Starlette(routes=[Route('/sse', endpoint=handle_sse, methods=['GET']), Route('/messages/', endpoint=sse.handle_post_message, methods=['POST'])]); uvicorn.run(starlette_app, host='0.0.0.0', port=8000)\""
     networks:
       - hermes-net
 
   duckduckgo-mcp:
-    image: python:3.12-slim
+    build: ./duckduckgo-mcp
     container_name: duckduckgo-mcp
     restart: unless-stopped
-    command: sh -c "pip install --no-cache-dir duckduckgo-mcp-server && python -c \"import sys; from duckduckgo_mcp_server.server import mcp, main; mcp.settings.transport_security.enable_dns_rebinding_protection = False if mcp.settings.transport_security else False; sys.argv = ['duckduckgo-mcp-server', '--transport', 'sse', '--host', '0.0.0.0', '--port', '8000']; main()\""
     networks:
       - hermes-net
 
@@ -588,9 +639,11 @@ cat << 'CONFIGEOF' > "$CONFIG_FILE"
 mcp_servers:
   docker:
     url: "http://docker-mcp:8000/sse"
+    transport: sse
     description: "Docker Container Management - list, start, stop, and inspect containers"
   duckduckgo:
     url: "http://duckduckgo-mcp:8000/sse"
+    transport: sse
     description: "Web Search - search the web using DuckDuckGo"
 CONFIGEOF
 
@@ -598,6 +651,7 @@ if [ "$PVE_API_ENABLED" = true ]; then
 cat << 'CONFIGEOF' >> "$CONFIG_FILE"
   proxmox:
     url: "http://proxmox-mcp:8380/sse"
+    transport: sse
     description: "Proxmox VE Server Management - create, start, stop, monitor VMs and containers"
 CONFIGEOF
 fi
@@ -640,6 +694,7 @@ fi
 
 echo -e "\n${GREEN}[6/6] Starting services...${NC}"
 pct exec $CTID -- bash -c "chown -R 1000:1000 /opt/hermes/data"
+pct exec $CTID -- bash -c "cd /opt/hermes && docker compose build docker-mcp duckduckgo-mcp"
 if [ "$PVE_API_ENABLED" = true ]; then
     pct exec $CTID -- bash -c "cd /opt/hermes && docker compose build proxmox-mcp"
 fi
