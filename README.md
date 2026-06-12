@@ -227,6 +227,64 @@ sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup_pb
 
 ---
 
+### 8️⃣ Hermes AI Agent Stack (`setup_hermes.sh`)
+
+An advanced, security-hardened script that deploys the **NousResearch Hermes AI Agent** inside an optimized LXC container. It integrates a local Proxmox MCP server to safely manage VMs and containers, featuring strict least-privilege security boundaries and auto-exposure.
+
+<details>
+<summary><b>✨ View Features & Security Architecture</b></summary>
+
+- 🛡️ **Least-Privilege API Access (Role-Based):** Unlike standard setups that require Proxmox `root@pam` access, this script automatically creates a restricted role (`HermesMinimal`) with minimal permissions (`VM.Audit`, `VM.PowerMgmt`, `VM.Console`, `Datastore.Audit`, `Sys.Audit`). Even if the AI agent is compromised, your main Proxmox host and databases remain completely safe from destructive commands.
+- 🐳 **Docker Socket Proxy Security:** Mounts a secure proxy (`docker-proxy`) inside the container instead of passing the raw `/var/run/docker.sock`. This restricts the AI agent to safe read/write endpoints and isolates the host system.
+- 📡 **ARP-Level Network Scan:** Uses `arping` on the Proxmox host for 100% reliable IP conflict detection, ensuring your chosen static IP is completely free even if target hosts block ping requests.
+- 🔗 **Proxmox MCP Server:** Sets up a dedicated Model Context Protocol (MCP) server that acts as a translator between Hermes' natural language queries and the Proxmox API.
+- 🌐 **AutoExposer Integration:** Automatically detects your Cloudflare domain via `auto_exposer` configuration, configures Nginx Proxy Manager / Homepage dashboard, and hides internal IP/ports on success.
+- 📦 **No Bloat:** Excludes auxiliary services like Portainer Agent and Watchtower to keep CPU/RAM usage inside the LXC at absolute minimum.
+- 🔄 **Idempotent Rollback:** Automatically reverts only newly created Proxmox tokens or users if the installation fails mid-way, leaving pre-existing credentials untouched.
+
+#### 📊 Setup Workflow
+
+```mermaid
+flowchart TD
+    Start([Run Script]) --> Preflight[1. Pre-flight Checks]
+    Preflight -->|Root & PVE Host| AutoDetect[2. Auto-Detect Plan]
+    AutoDetect -->|Suggest ID, Storage, IP| ConflictCheck{3. Check IP Conflict}
+    ConflictCheck -->|arping scan| FreeIP{IP Busy?}
+    FreeIP -->|Yes| UserIP[Prompt Alternative IP]
+    FreeIP -->|No| ConfirmPlan[Confirm Setup Plan]
+    UserIP --> ConfirmPlan
+    ConfirmPlan --> Secrets[4. Input Secrets: Telegram & OpenAI]
+    
+    subgraph Host_Sec [Host Security Boundary]
+        Secrets --> CreateRole[Create HermesMinimal Role]
+        CreateRole --> CreateUser[Create hermes-agent@pve User]
+        CreateUser --> GenToken[Generate API Token]
+    end
+    
+    subgraph LXC_Setup [Container Sandbox]
+        Secrets --> LXC[5. Create LXC Container]
+        LXC --> InstallDocker[6. Install Docker & Compose]
+        InstallDocker --> SetupMCP[7. Setup Proxmox MCP Server]
+        GenToken --> SetupMCP
+        SetupMCP --> ConfigFiles[8. Write configs & docker-compose]
+        ConfigFiles --> StartServices[9. Start Stack]
+    end
+    
+    StartServices --> HealthCheck{11. Health Check}
+    HealthCheck -->|Healthy| AutoExposer[12. AutoExposer Sync]
+    AutoExposer --> ShowSummary[Show Domain URL & Summary]
+    ShowSummary --> End([Success])
+```
+</details>
+
+**🚀 Run Command:**
+*(Run from your Proxmox Host as a regular sudo user)*
+```bash
+sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/setup_hermes.sh | sudo bash
+```
+
+---
+
 ## 🤝 Contributing
 
 Feel free to fork this repository, submit Pull Requests, or open Issues to suggest improvements or new scripts!
