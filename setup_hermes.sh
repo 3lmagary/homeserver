@@ -25,21 +25,21 @@ if ! command -v pveversion &>/dev/null; then echo -e "${RED}Not a Proxmox host!$
 # [1/6] Configuration
 echo -e "\n${GREEN}[1/6] Configuring Settings...${NC}"
 CTID=$(pvesh get /cluster/nextid)
-read -p "Container ID [$CTID]: " USER_CTID < /dev/tty || true
+read -p "Container ID [$CTID]: " USER_CTID < /dev/tty || USER_CTID=""
 CTID=${USER_CTID:-$CTID}
 
 STORAGES=($(pvesm status -content rootdir | awk 'NR>1 {print $1}'))
 echo -e "Available Storage: ${STORAGES[*]}"
-read -p "Storage [${STORAGES[0]}]: " TARGET_STORAGE < /dev/tty || true
+read -p "Storage [${STORAGES[0]}]: " TARGET_STORAGE < /dev/tty || TARGET_STORAGE=""
 TARGET_STORAGE=${TARGET_STORAGE:-${STORAGES[0]}}
 
 GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
 SUBNET=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d. -f1-3)
-read -p "Static IP [$SUBNET.150]: " STATIC_IP < /dev/tty || true
+read -p "Static IP [$SUBNET.150]: " STATIC_IP < /dev/tty || STATIC_IP=""
 STATIC_IP=${STATIC_IP:-$SUBNET.150}
 
-read -p "Telegram Bot Token: " TG_TOKEN < /dev/tty || true
-read -p "Telegram User ID: " TG_UID < /dev/tty || true
+read -p "Telegram Bot Token: " TG_TOKEN < /dev/tty
+read -p "Telegram User ID: " TG_UID < /dev/tty
 
 # [2/6] Create LXC
 echo -e "\n${GREEN}[2/6] Creating LXC...${NC}"
@@ -77,6 +77,71 @@ PVE_HOST=$(hostname -I | awk '{print $1}')
 echo -e "\n${GREEN}[5/6] Deploying Hermes Stack...${NC}"
 pct exec $CTID -- mkdir -p /opt/hermes/data
 pct exec $CTID -- git clone https://github.com/canvrno/ProxmoxMCP.git /opt/hermes/proxmox-mcp
+
+# --- Patch for LXC support ---
+pct exec $CTID -- python3 -c '
+import os
+vm_path = "/opt/hermes/proxmox-mcp/src/proxmox_mcp/tools/vm.py"
+manager_path = "/opt/hermes/proxmox-mcp/src/proxmox_mcp/tools/console/manager.py"
+
+with open(vm_path, "w") as f:
+    f.write("""from typing import List
+from mcp.types import TextContent as Content
+from .base import ProxmoxTool
+from .definitions import GET_VMS_DESC, EXECUTE_VM_COMMAND_DESC
+from .console.manager import VMConsoleManager
+
+class VMTools(ProxmoxTool):
+    def __init__(self, proxmox_api):
+        super().__init__(proxmox_api)
+        self.console_manager = VMConsoleManager(proxmox_api)
+    def get_vms(self) -> List[Content]:
+        try:
+            result = []
+            for node in self.proxmox.nodes.get():
+                name = node["node"]
+                try:
+                    for v in self.proxmox.nodes(name).qemu.get():
+                        result.append({"vmid": v["vmid"], "name": v["name"], "type": "qemu", "status": v["status"], "node": name})
+                except: pass
+                try:
+                    for l in self.proxmox.nodes(name).lxc.get():
+                        result.append({"vmid": l["vmid"], "name": l["name"], "type": "lxc", "status": l["status"], "node": name})
+                except: pass
+            return self._format_response(result, "vms")
+        except Exception as e: self._handle_error("get vms", e)
+    async def execute_command(self, node, vmid, command):
+        try:
+            res = await self.console_manager.execute_command(node, vmid, command)
+            return [Content(type="text", text=f"Output: {res[\"output\"]}\\nError: {res[\"error\"]}")]
+        except Exception as e: self._handle_error(f"exec on {vmid}", e)
+""")
+
+with open(manager_path, "w") as f:
+    f.write("""import logging, asyncio
+class VMConsoleManager:
+    def __init__(self, api): self.proxmox = api
+    async def execute_command(self, node, vmid, command):
+        try:
+            is_lxc = False
+            try: self.proxmox.nodes(node).qemu(vmid).status.current.get()
+            except:
+                self.proxmox.nodes(node).lxc(vmid).status.current.get()
+                is_lxc = True
+            if is_lxc:
+                try:
+                    self.proxmox.nodes(node).lxc(vmid).exec.post(command=command)
+                    return {"success": True, "output": "Command sent to LXC.", "error": ""}
+                except Exception as e: return {"success": False, "output": "", "error": str(e)}
+            else:
+                agent = self.proxmox.nodes(node).qemu(vmid).agent
+                pid = agent("exec").post(command=command)["pid"]
+                await asyncio.sleep(1)
+                res = agent("exec-status").get(pid=pid)
+                return {"success": True, "output": res.get("out-data", ""), "error": res.get("err-data", "")}
+        except Exception as e: return {"success": False, "output": "", "error": str(e)}
+""")
+'
 
 # Write Stack Config
 cat << ENV_EOF | pct exec $CTID -- tee /opt/hermes/.env >/dev/null
