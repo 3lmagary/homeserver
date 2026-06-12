@@ -20,7 +20,7 @@ KNOWN_SERVICES = {
 }
 
 # Skip these (background/infrastructure containers not user-facing)
-SKIP_SERVICES = {"watchtower", "portainer_agent", "portainer-agent"}
+SKIP_SERVICES = {"watchtower", "portainer_agent", "portainer-agent", "docker-mcp", "duckduckgo-mcp", "proxmox-mcp"}
 
 
 def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):

@@ -41,6 +41,13 @@ confirm_step() {
         echo -e "  ${BLUE}│${NC}  ${CYAN}${line}${NC}"
     done <<< "$description"
     echo -e "  ${BLUE}│${NC}"
+    
+    # Auto-approve if AUTO_APPROVE is true, or if not running interactively
+    if [ "${AUTO_APPROVE:-false}" = "true" ] || [ ! -t 0 ] || [ ! -e /dev/tty ]; then
+        echo -e "  ${BLUE}│${NC}  ${GREEN}Auto-approved (non-interactive mode)${NC}"
+        return 0
+    fi
+    
     echo -ne "  ${BLUE}│${NC}  ${BOLD}${YELLOW}Proceed? (Y/n): ${NC}"
     read -r choice < /dev/tty
     case "$choice" in
@@ -242,13 +249,13 @@ echo -e "\n${GREEN}[2/6] Creating LXC Container...${NC}"
 pveam update >/dev/null 2>&1 || true
 TEMPLATE_PATH=$(pveam available -section system | grep debian-12-standard | awk '{print $2}' | head -n 1)
 if [ -z "$TEMPLATE_PATH" ]; then echo -e "${RED}Could not find Debian 12 template.${NC}"; exit 1; fi
-if ! pveam list local | grep -q debian-12; then pveam download local "$TEMPLATE_PATH" >/dev/null 2>&1; fi
+if ! pveam list local | grep debian-12 >/dev/null; then pveam download local "$TEMPLATE_PATH" >/dev/null 2>&1; fi
 LOCAL_TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -n 1)
 
 NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
 echo "Creating LXC $CTID on $TARGET_STORAGE..."
 pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:$DISK_SIZE" --hostname "$LXC_NAME" \
-    --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1,keyctl=1
+    --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1,keyctl=1 --memory 2048 --swap 1024
 
 if [ -n "$DNS_SERVER" ]; then
     pct set $CTID --nameserver "$DNS_SERVER"
@@ -293,7 +300,7 @@ if confirm_step "Proxmox API Credentials" "$API_DESC"; then
     echo -e "\n${GREEN}[4/6] Setting up Proxmox API access...${NC}"
     
     # Create role if it doesn't exist
-    if pveum role list | grep -q "$PVE_ROLE_NAME"; then
+    if pveum role list | grep "$PVE_ROLE_NAME" >/dev/null; then
         echo -e "  ${YELLOW}⚠${NC} Role '${PVE_ROLE_NAME}' already exists, skipping creation."
     else
         pveum role add "$PVE_ROLE_NAME" -privs \
@@ -303,7 +310,7 @@ if confirm_step "Proxmox API Credentials" "$API_DESC"; then
     fi
 
     # Create user if it doesn't exist
-    if pveum user list | grep -q "$PVE_USER"; then
+    if pveum user list | grep "$PVE_USER" >/dev/null; then
         echo -e "  ${YELLOW}⚠${NC} User '${PVE_USER}' already exists, skipping creation."
     else
         pveum user add "$PVE_USER" -comment "Hermes AI Agent - Automated Management"
@@ -316,15 +323,15 @@ if confirm_step "Proxmox API Credentials" "$API_DESC"; then
     echo -e "  ${GREEN}✓${NC} User permissions assigned at root path"
 
     # Create/Recreate API Token
-    if pveum user token list "$PVE_USER" 2>/dev/null | grep -q "$PVE_TOKEN_NAME"; then
+    if pveum user token list "$PVE_USER" 2>/dev/null | grep "$PVE_TOKEN_NAME" >/dev/null; then
         echo -e "  ${YELLOW}⚠${NC} Token '${PVE_TOKEN_NAME}' already exists for '${PVE_USER}'. Recreating..."
         pveum user token remove "$PVE_USER" "$PVE_TOKEN_NAME" >/dev/null 2>&1 || true
     fi
-    TOKEN_OUTPUT=$(pveum user token add "$PVE_USER" "$PVE_TOKEN_NAME" -privsep 1 -comment "Hermes AI Agent API Access" 2>&1)
+    TOKEN_OUTPUT=$(pveum user token add "$PVE_USER" "$PVE_TOKEN_NAME" -privsep 1 -comment "Hermes AI Agent API Access" --output-format json 2>/dev/null || true)
     PVE_TOKEN_CREATED=true
 
-    # Extract details
-    TOKEN_SECRET=$(echo "$TOKEN_OUTPUT" | awk -F '[│|]' '$2 ~ /value/ {print $3}' | tr -d ' ' || echo "$TOKEN_OUTPUT" | tail -n 1)
+    # Extract details using robust fallback pipeline (JSON grep, Python, table awk fallback)
+    TOKEN_SECRET=$(echo "$TOKEN_OUTPUT" | grep -oP '"value":\s*"\K[^"]+' || echo "$TOKEN_OUTPUT" | python3 -c "import sys, json; print(json.loads(sys.stdin.read()).get('value', ''))" 2>/dev/null || echo "$TOKEN_OUTPUT" | awk -F '[│|]' '$2 ~ /value/ {print $3}' | tr -d ' ' || true)
     TOKEN_ID="${PVE_USER}!${PVE_TOKEN_NAME}"
     pveum aclmod / -token "$TOKEN_ID" -role "$PVE_ROLE_NAME" -propagate 1
 
@@ -337,19 +344,90 @@ if confirm_step "Proxmox API Credentials" "$API_DESC"; then
     # Setup Proxmox MCP Server inside container
     echo -e "\nSetting up Proxmox MCP Server..."
     pct exec $CTID -- bash -c "git clone https://github.com/canvrno/ProxmoxMCP.git /opt/hermes/proxmox-mcp 2>/dev/null || true"
+    
+    # Patch pyproject.toml to use stable PyPI mcp package instead of git dev version (which breaks imports)
+    pct exec $CTID -- sed -i 's|mcp @ git+https://github.com/modelcontextprotocol/python-sdk.git|mcp>=1.0.0|' /opt/hermes/proxmox-mcp/pyproject.toml
+
+    # Patch server.py to support SSE transport mode dynamically based on command line arguments
+    pct exec $CTID -- python3 -c '
+import sys
+file_path = "/opt/hermes/proxmox-mcp/src/proxmox_mcp/server.py"
+content = open(file_path).read()
+old_code = """        try:
+            self.logger.info("Starting MCP server...")
+            anyio.run(self.mcp.run_stdio_async)
+        except Exception as e:"""
+
+new_code = """        try:
+            self.logger.info("Starting MCP server...")
+            transport = "stdio"
+            host = "0.0.0.0"
+            port = 8380
+            if "--transport" in sys.argv:
+                idx = sys.argv.index("--transport")
+                if idx + 1 < len(sys.argv):
+                    transport = sys.argv[idx + 1]
+            if "--host" in sys.argv:
+                idx = sys.argv.index("--host")
+                if idx + 1 < len(sys.argv):
+                    host = sys.argv[idx + 1]
+            if "--port" in sys.argv:
+                idx = sys.argv.index("--port")
+                if idx + 1 < len(sys.argv):
+                    port = int(sys.argv[idx + 1])
+            if transport == "sse":
+                self.mcp.settings.host = host
+                self.mcp.settings.port = port
+                if self.mcp.settings.transport_security:
+                    self.mcp.settings.transport_security.enable_dns_rebinding_protection = False
+                self.mcp.run(transport="sse")
+            else:
+                self.mcp.run(transport="stdio")
+        except Exception as e:"""
+
+if old_code in content:
+    open(file_path, "w").write(content.replace(old_code, new_code))
+    print("server.py patched successfully")
+else:
+    print("Warning: server.py could not be patched")
+'
 
     cat << MCPEOF | pct exec $CTID -- tee /opt/hermes/proxmox-mcp/.env >/dev/null
 PROXMOX_HOST=https://${PVE_HOST_IP}:8006
 PROXMOX_TOKEN_ID=${TOKEN_ID}
 PROXMOX_TOKEN_SECRET=${TOKEN_SECRET}
 PROXMOX_VERIFY_SSL=false
+PROXMOX_MCP_CONFIG=proxmox-config/config.json
 MCPEOF
+
+    # Generate config.json dynamically
+    cat << JSONEOF | pct exec $CTID -- tee /opt/hermes/proxmox-mcp/proxmox-config/config.json >/dev/null
+{
+    "proxmox": {
+        "host": "${PVE_HOST_IP}",
+        "port": 8006,
+        "verify_ssl": false,
+        "service": "PVE"
+    },
+    "auth": {
+        "user": "${PVE_USER}",
+        "token_name": "${PVE_TOKEN_NAME}",
+        "token_value": "${TOKEN_SECRET}"
+    },
+    "logging": {
+        "level": "INFO",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        "file": "proxmox_mcp.log"
+    }
+}
+JSONEOF
 
     cat << 'MCPDOCKEREOF' | pct exec $CTID -- tee /opt/hermes/proxmox-mcp/Dockerfile >/dev/null
 FROM python:3.12-slim
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY . .
-RUN pip install --no-cache-dir -e . 2>/dev/null || pip install --no-cache-dir proxmoxer requests urllib3 mcp
+RUN pip install --no-cache-dir .
 EXPOSE 8380
 CMD ["python", "-m", "proxmox_mcp.server", "--transport", "sse", "--host", "0.0.0.0", "--port", "8380"]
 MCPDOCKEREOF
@@ -362,7 +440,7 @@ fi
 # [5/6] Write Docker Compose & Config Files
 # ==================================================
 echo -e "\n${GREEN}[5/6] Writing Docker Compose and configuration files...${NC}"
-pct exec $CTID -- mkdir -p /opt/hermes/data
+pct exec $CTID -- mkdir -p /opt/hermes/data /opt/hermes/open-webui
 
 # 1. Write .env inside container
 cat << ENVEOF | pct exec $CTID -- tee /opt/hermes/.env >/dev/null
@@ -376,7 +454,12 @@ PROXMOX_VERIFY_SSL=false
 HERMES_UID=1000
 HERMES_GID=1000
 API_SERVER_HOST=0.0.0.0
-GATEWAY_HEALTH_URL=http://hermes:8642
+GATEWAY_HEALTH_URL=http://localhost:8642
+
+# ── Provider Configuration (Required to keep container running) ──
+OPENAI_API_KEY=please_configure_in_web_ui_or_wizard
+HERMES_DASHBOARD=true
+HERMES_DASHBOARD_INSECURE=true
 ENVEOF
 
 # 2. Construct docker-compose.yml on host first to avoid escaping errors
@@ -387,9 +470,11 @@ services:
     image: nousresearch/hermes-agent:latest
     container_name: hermes
     restart: unless-stopped
-    command: bash -c "pip install --no-cache-dir mcp-server-docker duckduckgo-mcp && gateway run"
+    tty: true
+    stdin_open: true
     ports:
       - "8642:8642"
+      - "9119:9119"
     volumes:
       - ./data:/opt/data
       - /var/run/docker.sock:/var/run/docker.sock
@@ -397,53 +482,84 @@ services:
       - .env
     labels:
       - "autoexposer.enable=true"
-      - "autoexposer.name=Hermes Gateway"
+      - "autoexposer.name=Hermes"
       - "autoexposer.group=AI & Agents"
-      - "autoexposer.icon=robot"
-      - "autoexposer.port=8642"
-      - "autoexposer.subdomain=hermes-api"
+      - "autoexposer.icon=terminal"
+      - "autoexposer.port=9119"
+      - "autoexposer.subdomain=hermes"
+    depends_on:
+      - docker-mcp
+      - duckduckgo-mcp
 COMPOSEEOF
 
 if [ "$PVE_API_ENABLED" = true ]; then
 cat << 'COMPOSEEOF' >> "$COMPOSE_FILE"
-    depends_on:
       - proxmox-mcp
-    networks:
-      - hermes-net
-COMPOSEEOF
-else
-cat << 'COMPOSEEOF' >> "$COMPOSE_FILE"
-    networks:
-      - hermes-net
 COMPOSEEOF
 fi
 
 cat << 'COMPOSEEOF' >> "$COMPOSE_FILE"
-
-  dashboard:
-    image: nousresearch/hermes-agent:latest
-    container_name: hermes-dashboard
-    restart: unless-stopped
-    command: dashboard --host 0.0.0.0 --insecure
-    ports:
-      - "9119:9119"
-    volumes:
-      - ./data:/opt/data
-    environment:
-      - GATEWAY_HEALTH_URL=http://hermes:8642
-    env_file:
-      - .env
-    depends_on:
-      - hermes
     networks:
       - hermes-net
+
+  docker-mcp:
+    image: python:3.12-slim
+    container_name: docker-mcp
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: sh -c "pip install --no-cache-dir mcp-server-docker && python -c \"import asyncio, docker, uvicorn; from starlette.applications import Starlette; from starlette.routing import Route; from mcp.server.sse import SseServerTransport; from mcp_server_docker.server import app, ServerSettings; import mcp_server_docker.server as server_mod; server_mod._docker = docker.from_env(); server_mod._server_settings = ServerSettings(); sse = SseServerTransport('/messages/'); exec(\\\"async def handle_sse(request):\\\\n    async with sse.connect_sse(request.scope, request.receive, request._send) as (read, write):\\\\n        await app.run(read, write, app.create_initialization_options())\\\"); starlette_app = Starlette(routes=[Route('/sse', endpoint=handle_sse, methods=['GET']), Route('/messages/', endpoint=sse.handle_post_message, methods=['POST'])]); uvicorn.run(starlette_app, host='0.0.0.0', port=8000)\""
+    networks:
+      - hermes-net
+
+  duckduckgo-mcp:
+    image: python:3.12-slim
+    container_name: duckduckgo-mcp
+    restart: unless-stopped
+    command: sh -c "pip install --no-cache-dir duckduckgo-mcp-server && python -c \"import sys; from duckduckgo_mcp_server.server import mcp, main; mcp.settings.transport_security.enable_dns_rebinding_protection = False if mcp.settings.transport_security else False; sys.argv = ['duckduckgo-mcp-server', '--transport', 'sse', '--host', '0.0.0.0', '--port', '8000']; main()\""
+    networks:
+      - hermes-net
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    volumes:
+      - ./open-webui:/app/backend/data
+    environment:
+      - OPENAI_API_BASE_URL=http://hermes:8642/v1
+      - OPENAI_API_KEY=sk-placeholder
+      - WEBUI_AUTH=false
     labels:
       - "autoexposer.enable=true"
-      - "autoexposer.name=Hermes Dashboard"
+      - "autoexposer.name=Open WebUI"
       - "autoexposer.group=AI & Agents"
-      - "autoexposer.icon=robot-outline"
-      - "autoexposer.port=9119"
-      - "autoexposer.subdomain=hermes"
+      - "autoexposer.icon=chatgpt"
+      - "autoexposer.port=3000"
+      - "autoexposer.subdomain=chat"
+    networks:
+      - hermes-net
+
+  lobe-chat:
+    image: lobehub/lobe-chat:latest
+    container_name: lobe-chat
+    restart: unless-stopped
+    ports:
+      - "3210:3210"
+    environment:
+      - OPENAI_API_KEY=sk-placeholder
+      - OPENAI_PROXY_URL=http://hermes:8642/v1
+    labels:
+      - "autoexposer.enable=true"
+      - "autoexposer.name=LobeChat"
+      - "autoexposer.group=AI & Agents"
+      - "autoexposer.icon=lobe"
+      - "autoexposer.port=3210"
+      - "autoexposer.subdomain=lobe"
+    networks:
+      - hermes-net
 COMPOSEEOF
 
 if [ "$PVE_API_ENABLED" = true ]; then
@@ -511,10 +627,10 @@ cat << 'CONFIGEOF' > "$CONFIG_FILE"
 
 mcp_servers:
   docker:
-    command: "mcp-server-docker"
+    url: "http://docker-mcp:8000/sse"
     description: "Docker Container Management - list, start, stop, and inspect containers"
   duckduckgo:
-    command: "duckduckgo-mcp"
+    url: "http://duckduckgo-mcp:8000/sse"
     description: "Web Search - search the web using DuckDuckGo"
 CONFIGEOF
 
@@ -563,7 +679,7 @@ if ! confirm_step "Start Services" "$SERVICES_DESC"; then
 fi
 
 echo -e "\n${GREEN}[6/6] Starting services...${NC}"
-pct exec $CTID -- bash -c "chown -R 1000:1000 /opt/hermes/data"
+pct exec $CTID -- bash -c "chown -R 1000:1000 /opt/hermes/data /opt/hermes/open-webui"
 if [ "$PVE_API_ENABLED" = true ]; then
     pct exec $CTID -- bash -c "cd /opt/hermes && docker compose build proxmox-mcp"
 fi
@@ -575,7 +691,7 @@ sleep 15
 
 if [ "$PVE_API_ENABLED" = true ]; then
     echo -e "${CYAN}Checking MCP server status...${NC}"
-    if pct exec $CTID -- bash -c "docker inspect proxmox-mcp --format='{{.State.Running}}' 2>/dev/null" | grep -q true; then
+    if pct exec $CTID -- bash -c "docker inspect proxmox-mcp --format='{{.State.Running}}' 2>/dev/null" | grep true >/dev/null; then
         echo -e "  ${GREEN}✓${NC} Proxmox MCP Server is running"
     else
         echo -e "  ${YELLOW}⚠${NC} MCP Server may still be starting. Check container logs: docker logs proxmox-mcp"
@@ -623,6 +739,20 @@ if [ -n "$CF_DOMAIN" ]; then
 echo -e "   URL:       ${YELLOW}https://hermes-api.${CF_DOMAIN}${NC} (or ${YELLOW}http://${STATIC_IP}:8642${NC})"
 else
 echo -e "   URL:       ${YELLOW}http://${STATIC_IP}:8642${NC}"
+fi
+echo -e ""
+echo -e "${GREEN}▶ Open WebUI (ChatGPT Interface) ${NC}"
+if [ -n "$CF_DOMAIN" ]; then
+echo -e "   URL:       ${YELLOW}https://chat.${CF_DOMAIN}${NC} (or ${YELLOW}http://${STATIC_IP}:3000${NC})"
+else
+echo -e "   URL:       ${YELLOW}http://${STATIC_IP}:3000${NC}"
+fi
+echo -e ""
+echo -e "${GREEN}▶ LobeChat (Modern AI UI) ${NC}"
+if [ -n "$CF_DOMAIN" ]; then
+echo -e "   URL:       ${YELLOW}https://lobe.${CF_DOMAIN}${NC} (or ${YELLOW}http://${STATIC_IP}:3210${NC})"
+else
+echo -e "   URL:       ${YELLOW}http://${STATIC_IP}:3210${NC}"
 fi
 echo -e ""
 echo -e "${GREEN}▶ Proxmox LXC Container ${NC}"
