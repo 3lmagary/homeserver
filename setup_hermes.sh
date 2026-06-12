@@ -324,7 +324,7 @@ if confirm_step "Proxmox API Credentials" "$API_DESC"; then
     PVE_TOKEN_CREATED=true
 
     # Extract details
-    TOKEN_SECRET=$(echo "$TOKEN_OUTPUT" | grep -oP 'value.*$' | awk '{print $NF}' || echo "$TOKEN_OUTPUT" | tail -n 1)
+    TOKEN_SECRET=$(echo "$TOKEN_OUTPUT" | awk -F '[│|]' '$2 ~ /value/ {print $3}' | tr -d ' ' || echo "$TOKEN_OUTPUT" | tail -n 1)
     TOKEN_ID="${PVE_USER}!${PVE_TOKEN_NAME}"
     pveum aclmod / -token "$TOKEN_ID" -role "$PVE_ROLE_NAME" -propagate 1
 
