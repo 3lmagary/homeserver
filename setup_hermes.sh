@@ -440,7 +440,7 @@ fi
 # [5/6] Write Docker Compose & Config Files
 # ==================================================
 echo -e "\n${GREEN}[5/6] Writing Docker Compose and configuration files...${NC}"
-pct exec $CTID -- mkdir -p /opt/hermes/data /opt/hermes/open-webui
+pct exec $CTID -- mkdir -p /opt/hermes/data
 
 # 1. Write .env inside container
 cat << ENVEOF | pct exec $CTID -- tee /opt/hermes/.env >/dev/null
@@ -520,46 +520,6 @@ cat << 'COMPOSEEOF' >> "$COMPOSE_FILE"
     networks:
       - hermes-net
 
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: open-webui
-    restart: unless-stopped
-    ports:
-      - "3000:8080"
-    volumes:
-      - ./open-webui:/app/backend/data
-    environment:
-      - OPENAI_API_BASE_URL=http://hermes:8642/v1
-      - OPENAI_API_KEY=sk-placeholder
-      - WEBUI_AUTH=false
-    labels:
-      - "autoexposer.enable=true"
-      - "autoexposer.name=Open WebUI"
-      - "autoexposer.group=AI & Agents"
-      - "autoexposer.icon=chatgpt"
-      - "autoexposer.port=3000"
-      - "autoexposer.subdomain=chat"
-    networks:
-      - hermes-net
-
-  lobe-chat:
-    image: lobehub/lobe-chat:latest
-    container_name: lobe-chat
-    restart: unless-stopped
-    ports:
-      - "3210:3210"
-    environment:
-      - OPENAI_API_KEY=sk-placeholder
-      - OPENAI_PROXY_URL=http://hermes:8642/v1
-    labels:
-      - "autoexposer.enable=true"
-      - "autoexposer.name=LobeChat"
-      - "autoexposer.group=AI & Agents"
-      - "autoexposer.icon=lobe"
-      - "autoexposer.port=3210"
-      - "autoexposer.subdomain=lobe"
-    networks:
-      - hermes-net
 COMPOSEEOF
 
 if [ "$PVE_API_ENABLED" = true ]; then
@@ -679,7 +639,7 @@ if ! confirm_step "Start Services" "$SERVICES_DESC"; then
 fi
 
 echo -e "\n${GREEN}[6/6] Starting services...${NC}"
-pct exec $CTID -- bash -c "chown -R 1000:1000 /opt/hermes/data /opt/hermes/open-webui"
+pct exec $CTID -- bash -c "chown -R 1000:1000 /opt/hermes/data"
 if [ "$PVE_API_ENABLED" = true ]; then
     pct exec $CTID -- bash -c "cd /opt/hermes && docker compose build proxmox-mcp"
 fi
@@ -739,20 +699,6 @@ if [ -n "$CF_DOMAIN" ]; then
 echo -e "   URL:       ${YELLOW}https://hermes-api.${CF_DOMAIN}${NC} (or ${YELLOW}http://${STATIC_IP}:8642${NC})"
 else
 echo -e "   URL:       ${YELLOW}http://${STATIC_IP}:8642${NC}"
-fi
-echo -e ""
-echo -e "${GREEN}▶ Open WebUI (ChatGPT Interface) ${NC}"
-if [ -n "$CF_DOMAIN" ]; then
-echo -e "   URL:       ${YELLOW}https://chat.${CF_DOMAIN}${NC} (or ${YELLOW}http://${STATIC_IP}:3000${NC})"
-else
-echo -e "   URL:       ${YELLOW}http://${STATIC_IP}:3000${NC}"
-fi
-echo -e ""
-echo -e "${GREEN}▶ LobeChat (Modern AI UI) ${NC}"
-if [ -n "$CF_DOMAIN" ]; then
-echo -e "   URL:       ${YELLOW}https://lobe.${CF_DOMAIN}${NC} (or ${YELLOW}http://${STATIC_IP}:3210${NC})"
-else
-echo -e "   URL:       ${YELLOW}http://${STATIC_IP}:3210${NC}"
 fi
 echo -e ""
 echo -e "${GREEN}▶ Proxmox LXC Container ${NC}"
