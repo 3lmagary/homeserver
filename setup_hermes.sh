@@ -297,7 +297,7 @@ if confirm_step "Proxmox API Credentials" "$API_DESC"; then
         echo -e "  ${YELLOW}⚠${NC} Role '${PVE_ROLE_NAME}' already exists, skipping creation."
     else
         pveum role add "$PVE_ROLE_NAME" -privs \
-            "VM.Allocate,VM.Audit,VM.Backup,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.Monitor,VM.PowerMgmt,VM.Snapshot,VM.Snapshot.Rollback,Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Sys.Audit,Sys.Console,Sys.Modify,Sys.PowerMgmt,Sys.Syslog,SDN.Audit,SDN.Use,Pool.Allocate,Pool.Audit"
+            "VM.Allocate,VM.Audit,VM.Backup,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.PowerMgmt,VM.Snapshot,VM.Snapshot.Rollback,Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Sys.Audit,Sys.Console,Sys.Modify,Sys.PowerMgmt,Sys.Syslog,SDN.Audit,SDN.Use,Pool.Allocate,Pool.Audit"
         PVE_ROLE_CREATED=true
         echo -e "  ${GREEN}✓${NC} Role '${PVE_ROLE_NAME}' created"
     fi
