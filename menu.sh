@@ -112,11 +112,21 @@ while true; do
     done
     echo -e "\n${BLUE}==============================================================${NC}"
     
+    # Flush any leftover keypresses in the input buffer first
+    read -t 0.1 -N 1000000 < /dev/tty 2>/dev/null || true
+    
     # Selection loop
     set +e
     while true; do
         # Read keypress (3 chars max for escape codes) from /dev/tty
         IFS= read -r -n 3 -s key < /dev/tty 2>/dev/null
+        status=$?
+        
+        # If read failed (e.g. timeout, signal, or EOF), ignore and continue
+        if [ $status -ne 0 ]; then
+            sleep 0.05
+            continue
+        fi
         
         # Up Arrow
         if [[ "$key" == $'\x1b[A' ]]; then
@@ -151,7 +161,7 @@ while true; do
                 clear_line
                 echo -e "\n${BLUE}==============================================================${NC}"
             fi
-        # Enter
+        # Enter (Only if read was successful and key is empty/newline)
         elif [[ "$key" == "" ]]; then
             break
         fi
