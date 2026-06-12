@@ -600,19 +600,9 @@ if [ -n "$CF_DOMAIN" ] && [ -d "/opt/homeserver/auto_exposer" ]; then
     )
 fi
 
-# Official Wizard Confirmation
-WIZARD_DESC="Run the official interactive Hermes setup wizard:
-  • Connect to your preferred LLM provider (OpenAI, OpenRouter, etc.)
-  • Configure API access and agent settings
-  • Set up initial assistant personality"
-if confirm_step "Launch Hermes Wizard" "$WIZARD_DESC"; then
-    echo -e "\nLaunching Setup Wizard..."
-    pct exec $CTID -- bash -c "cd /opt/hermes && docker compose exec -it hermes hermes setup" < /dev/tty
-else
-    echo -e "\n${YELLOW}Setup Wizard skipped. Run it manually later using:${NC}"
-    echo -e "  ${CYAN}pct enter $CTID${NC}"
-    echo -e "  ${CYAN}cd /opt/hermes && docker compose exec -it hermes hermes setup${NC}"
-fi
+echo -e "\n${YELLOW}ℹ  Note: To finalize your LLM and API configuration, please run the setup wizard manually using:${NC}"
+echo -e "   ${GREEN}pct enter $CTID${NC}"
+echo -e "   ${GREEN}cd /opt/hermes && docker compose exec -it hermes hermes setup${NC}"
 
 # ==================================================
 # Final Summary
