@@ -115,8 +115,8 @@ while true; do
     # Selection loop
     set +e
     while true; do
-        # Read keypress (3 chars max for escape codes)
-        IFS= read -r -n 3 -s key 2>/dev/null
+        # Read keypress (3 chars max for escape codes) from /dev/tty
+        IFS= read -r -n 3 -s key < /dev/tty 2>/dev/null
         
         # Up Arrow
         if [[ "$key" == $'\x1b[A' ]]; then
