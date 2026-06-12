@@ -220,6 +220,12 @@ if [ -n "$ADGUARD_CTID" ]; then
     fi
 fi
 
+# ─── Telegram Configuration ───
+# ─── Telegram Configuration ───
+echo -e "\n${GREEN}[1/6-extra] Telegram Integration Setup...${NC}"
+read -p "Enter Telegram Bot Token: " TELEGRAM_TOKEN
+read -p "Enter Telegram User ID (Allowlist): " TELEGRAM_USER_ID
+
 # 5. Enable/Disable Supplementary Tools (Automatic Default)
 ENABLE_PORTAINER=true
 ENABLE_WATCHTOWER=true
@@ -513,6 +519,7 @@ GATEWAY_HEALTH_URL=http://localhost:8642
 OPENAI_API_KEY=please_configure_in_web_ui_or_wizard
 HERMES_DASHBOARD=true
 HERMES_DASHBOARD_INSECURE=true
+TELEGRAM_BOT_TOKEN=${TELEGRAM_TOKEN}
 ENVEOF
 
 # 2. Construct docker-compose.yml on host first to avoid escaping errors
@@ -694,6 +701,25 @@ fi
 
 echo -e "\n${GREEN}[6/6] Starting services...${NC}"
 pct exec $CTID -- bash -c "chown -R 1000:1000 /opt/hermes/data"
+
+# Setup Telegram Channel Directory (Allowlist)
+cat << JSONEOF | pct exec $CTID -- tee /opt/hermes/data/channel_directory.json >/dev/null
+{
+  "updated_at": "$(date -u +"%Y-%m-%dT%H:%M:%S.%NZ")",
+  "platforms": {
+    "telegram": [
+      {
+        "id": "${TELEGRAM_USER_ID}",
+        "label": "Primary User",
+        "role": "user"
+      }
+    ]
+  }
+}
+JSONEOF
+
+# Ensure correct permissions for the newly created file
+pct exec $CTID -- chown -R 1000:1000 /opt/hermes/data
 pct exec $CTID -- bash -c "cd /opt/hermes && docker compose build docker-mcp duckduckgo-mcp"
 if [ "$PVE_API_ENABLED" = true ]; then
     pct exec $CTID -- bash -c "cd /opt/hermes && docker compose build proxmox-mcp"
