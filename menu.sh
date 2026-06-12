@@ -68,40 +68,105 @@ if [ ${#AVAILABLE_SCRIPTS[@]} -eq 0 ]; then
     exit 1
 fi
 
-show_menu() {
+# ANSI Escape Codes and helpers for arrow key navigation
+ESC=$(printf '\033')
+BOLD="\033[1m"
+CYAN="\033[0;36m"
+
+cursor_up() { printf "${ESC}[%dA" "${1:-1}"; }
+clear_line() { printf "${ESC}[2K"; }
+hide_cursor() { printf "${ESC}[?25l"; }
+show_cursor() { printf "${ESC}[?25h"; }
+
+# Make sure we restore cursor on exit/interrupt
+trap show_cursor EXIT INT TERM
+
+# Build the options array
+options=()
+for script in "${AVAILABLE_SCRIPTS[@]}"; do
+    title="${SCRIPT_TITLES[$script]:-$script}"
+    options+=("$title (${BLUE}$script${NC})")
+done
+options+=("${RED}Exit Menu${NC}")
+
+selected=0
+num_options=${#options[@]}
+
+while true; do
     clear
     echo -e "${BLUE}=============================================================="
     echo -e "         🚀 Ultimate Home Server Setup - Interactive Menu"
     echo -e "==============================================================${NC}"
-    echo -e "Select one of the available scripts to execute:\n"
+    echo -e "Use the ${BOLD}Up/Down Arrow Keys${NC} to navigate and press ${BOLD}Enter${NC} to select:\n"
     
-    local idx=1
-    for script in "${AVAILABLE_SCRIPTS[@]}"; do
-        local title="${SCRIPT_TITLES[$script]:-$script}"
-        echo -e "  [${YELLOW}$idx${NC}] $title (${BLUE}$script${NC})"
-        ((idx++))
+    # Hide cursor
+    hide_cursor
+    
+    # Draw initial list
+    for i in "${!options[@]}"; do
+        if [ "$i" -eq "$selected" ]; then
+            echo -e "  ${BOLD}${YELLOW}➜  ${options[$i]}${NC}"
+        else
+            echo -e "     ${options[$i]}"
+        fi
     done
+    echo -e "\n${BLUE}==============================================================${NC}"
     
-    echo -e "  [${RED}0${NC}] Exit Menu"
-    echo -e "${BLUE}==============================================================${NC}"
-}
-
-while true; do
-    show_menu
-    read -p "Enter your choice: " CHOICE < /dev/tty
+    # Selection loop
+    set +e
+    while true; do
+        # Read keypress (3 chars max for escape codes)
+        IFS= read -r -n 3 -s key 2>/dev/null
+        
+        # Up Arrow
+        if [[ "$key" == $'\x1b[A' ]]; then
+            if [ "$selected" -gt 0 ]; then
+                ((selected--))
+                # Move up past the border (1) and empty line (1) and options list (num_options)
+                cursor_up $((num_options + 2))
+                for i in "${!options[@]}"; do
+                    clear_line
+                    if [ "$i" -eq "$selected" ]; then
+                        echo -e "  ${BOLD}${YELLOW}➜  ${options[$i]}${NC}"
+                    else
+                        echo -e "     ${options[$i]}"
+                    fi
+                done
+                clear_line
+                echo -e "\n${BLUE}==============================================================${NC}"
+            fi
+        # Down Arrow
+        elif [[ "$key" == $'\x1b[B' ]]; then
+            if [ "$selected" -lt $((num_options - 1)) ]; then
+                ((selected++))
+                cursor_up $((num_options + 2))
+                for i in "${!options[@]}"; do
+                    clear_line
+                    if [ "$i" -eq "$selected" ]; then
+                        echo -e "  ${BOLD}${YELLOW}➜  ${options[$i]}${NC}"
+                    else
+                        echo -e "     ${options[$i]}"
+                    fi
+                done
+                clear_line
+                echo -e "\n${BLUE}==============================================================${NC}"
+            fi
+        # Enter
+        elif [[ "$key" == "" ]]; then
+            break
+        fi
+    done
+    set -e
+    show_cursor
     
-    if [ "$CHOICE" == "0" ]; then
+    # If "Exit Menu" is selected
+    if [ "$selected" -eq $((num_options - 1)) ]; then
         echo -e "\n${GREEN}Goodbye!${NC}"
         exit 0
     fi
     
-    if ! [[ "$CHOICE" =~ ^[0-9]+$ ]] || [ "$CHOICE" -lt 1 ] || [ "$CHOICE" -gt "${#AVAILABLE_SCRIPTS[@]}" ]; then
-        echo -e "\n${RED}Invalid choice. Press Enter to try again...${NC}"
-        read -r < /dev/tty
-        continue
-    fi
-    
-    SELECTED_SCRIPT="${AVAILABLE_SCRIPTS[$((CHOICE-1))]}"
+    # Execute selected script
+    SELECTED_SCRIPT="${AVAILABLE_SCRIPTS[$selected]}"
     SELECTED_TITLE="${SCRIPT_TITLES[$SELECTED_SCRIPT]:-$SELECTED_SCRIPT}"
     
     echo -e "\n${GREEN}Starting: $SELECTED_TITLE...${NC}"
