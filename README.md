@@ -253,7 +253,7 @@ flowchart TD
     FreeIP -->|Yes| UserIP[Prompt Alternative IP]
     FreeIP -->|No| ConfirmPlan[Confirm Setup Plan]
     UserIP --> ConfirmPlan
-    ConfirmPlan --> Secrets[4. Input Secrets: Telegram & OpenAI]
+    ConfirmPlan --> Secrets[4. Input Secrets: Telegram & OpenRouter]
     
     subgraph Host_Sec [Host Security Boundary]
         Secrets --> CreateRole[Create HermesMinimal Role]

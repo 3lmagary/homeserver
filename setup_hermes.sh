@@ -168,7 +168,7 @@ echo ""
 read -r -p "Telegram User ID: " TG_UID < /dev/tty || true
 [ -z "$TG_UID" ]   && { log_error "Telegram User ID cannot be empty!"; exit 1; }
 
-read -r -s -p "OpenAI API Key (leave blank to skip): " OPENAI_KEY < /dev/tty || true
+read -r -s -p "OpenRouter API Key (leave blank to skip): " OPENROUTER_KEY < /dev/tty || true
 echo ""
 
 # ══════════════════════════════════════════════════════
@@ -195,7 +195,7 @@ pct create "$CTID" "$TEMPLATE" \
   --net0       "name=eth0,bridge=vmbr0,ip=$STATIC_IP/24,gw=$GW" \
   --unprivileged 1 \
   --features   nesting=1,keyctl=1 \
-  --memory     2048 \
+  --memory     4096 \
   --cores      2 \
   --swap       1024
 
@@ -317,8 +317,8 @@ TELEGRAM_BOT_TOKEN=${TG_TOKEN}
 TELEGRAM_ALLOWED_USERS=${TG_UID}
 HERMES_DASHBOARD=true"
 
-[ -n "$OPENAI_KEY" ] && ENV_CONTENT="${ENV_CONTENT}
-OPENAI_API_KEY=${OPENAI_KEY}"
+[ -n "$OPENROUTER_KEY" ] && ENV_CONTENT="${ENV_CONTENT}
+OPENROUTER_API_KEY=${OPENROUTER_KEY}"
 
 printf '%s\n' "$ENV_CONTENT" | pct exec "$CTID" -- tee /opt/hermes/.env >/dev/null
 pct exec "$CTID" -- bash -c "chmod 600 /opt/hermes/.env"
