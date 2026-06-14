@@ -1,4 +1,6 @@
 #!/bin/bash
+echo -e "\033[0;34m[i] Configuring system-specific optimizations for your hardware...\033[0m"
+source <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/.sys_check.sh)
 
 # ==========================================
 # Proxmox Expandable NAS Setup Script

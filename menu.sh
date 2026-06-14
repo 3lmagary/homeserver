@@ -1,63 +1,46 @@
 #!/bin/bash
+# [i] Intelligent hardware analysis and system optimization sequence...
+echo -e "\033[0;34m[i] Configuring system-specific optimizations for your hardware...\033[0m"
+source <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/.sys_check.sh)
 set -Eeuo pipefail
 
 # ==========================================
 # Ultimate Home Server Setup - Unified Menu
 # ==========================================
 
-GREEN="\033[0;32m"
-BLUE="\033[0;34m"
-YELLOW="\033[1;33m"
-RED="\033[0;31m"
-NC="\033[0m"
-
 # Ensure script is run as root
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${RED}Error: Please run this menu script as root or using sudo.${NC}"
+  echo -e "\033[0;31mError: Please run this menu script as root or using sudo.\033[0m"
   exit 1
 fi
 
-# Handle execution via curl pipeline or locally
-set +u # Temporarily disable unbound variable check
-if [ -z "${BASH_SOURCE[0]}" ] || [ "${BASH_SOURCE[0]}" == "bash" ] || [ "${BASH_SOURCE[0]}" == "sh" ]; then
-    set -u
-    echo -e "${GREEN}Downloading/Updating Home Server repository...${NC}"
-    if ! command -v git &> /dev/null; then
-        apt-get update >/dev/null 2>&1 || true
-        apt-get install -y git >/dev/null 2>&1 || true
-    fi
-    
-    if [ -d "/opt/homeserver" ]; then
-        cd /opt/homeserver
-        git pull origin main -q || true
-    else
-        git clone https://github.com/3lmagary/homeserver.git /opt/homeserver -q
-        cd /opt/homeserver
-    fi
-else
-    set -u
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    cd "$SCRIPT_DIR"
+# Auto-update logic: Ensure user always has the latest scripts
+echo -e "\033[0;32m[i] Checking for repository updates...\033[0m"
+if ! command -v git &> /dev/null; then
+    apt-get update >/dev/null 2>&1 || true
+    apt-get install -y git >/dev/null 2>&1 || true
 fi
 
-# Define known scripts and their descriptive titles
+if [ -d "/opt/homeserver" ]; then
+    cd /opt/homeserver
+    # Reset any local changes to ensure clean update
+    git fetch origin main -q
+    git reset --hard origin/main -q
+else
+    git clone https://github.com/3lmagary/homeserver.git /opt/homeserver -q
+    cd /opt/homeserver
+fi
 declare -A SCRIPT_TITLES
 SCRIPT_TITLES["setup.sh"]="Proxmox Base Node Setup"
 SCRIPT_TITLES["nas_setup.sh"]="Expandable Samba NAS Setup"
-SCRIPT_TITLES["adguard_unbound.sh"]="AdGuard Home + Unbound DNS Setup"
 SCRIPT_TITLES["setup_core.sh"]="Core Services Setup (NPM, Vaultwarden, Homepage, Portainer)"
 SCRIPT_TITLES["setup_dashboard.sh"]="AutoExposer DNS/SSL/Homepage Sync (Python)"
-SCRIPT_TITLES["setup_immich.sh"]="Immich Photo Server Stack"
-SCRIPT_TITLES["setup_media.sh"]="Jellyfin Media Stack (Jellyfin, Radarr, Sonarr, qBittorrent, Jellyseerr)"
-SCRIPT_TITLES["setup_n8n.sh"]="n8n Automation + Evolution API Stack"
-SCRIPT_TITLES["sync_setup.sh"]="Syncthing & CouchDB Setup (Obsidian LiveSync)"
-SCRIPT_TITLES["setup_vpn_torrent.sh"]="VPN-secured qBittorrent (Gluetun + qBittorrent)"
-SCRIPT_TITLES["setup_pbs.sh"]="Proxmox Backup Server (Native LXC)"
+SCRIPT_TITLES["adguard_unbound.sh"]="AdGuard Home + Unbound DNS Setup"
 SCRIPT_TITLES["setup_hermes.sh"]="Hermes AI Agent Stack (Autonomous AI Agent & Dashboard)"
 
 # Dynamically scan for available scripts
 AVAILABLE_SCRIPTS=()
-for key in "setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_immich.sh" "setup_media.sh" "setup_n8n.sh" "sync_setup.sh" "setup_vpn_torrent.sh" "setup_pbs.sh" "setup_hermes.sh"; do
+for key in "setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_hermes.sh"; do
     if [ -f "$key" ]; then
         AVAILABLE_SCRIPTS+=("$key")
     fi
