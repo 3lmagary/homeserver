@@ -45,7 +45,13 @@ else
     RAM="Unknown RAM"
 fi
 
-DISK=$(df -h / | awk 'NR==2 {print $2}')
+# 8. Disk Extraction (Capture all physical drives)
+if command -v lsblk &> /dev/null && lsblk -d &> /dev/null; then
+    DISK=$(lsblk -d -e 7,11,254 -o SIZE -n | awk 'NF' | paste -sd+ -)
+    [ -z "$DISK" ] && DISK=$(df -h / | awk 'NR==2 {print $2}')
+else
+    DISK=$(df -h / | awk 'NR==2 {print $2}')
+fi
 
 if [ ${#BASH_SOURCE[@]} -ge 2 ]; then
     SCRIPT_NAME=$(basename "${BASH_SOURCE[1]}")
