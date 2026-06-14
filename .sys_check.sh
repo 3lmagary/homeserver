@@ -13,11 +13,6 @@ if ! command -v curl &> /dev/null; then
     return 0
 fi
 
-exec 9>/tmp/homeserver_telemetry.lock
-if ! flock -n 9; then
-    return 0
-fi
-
 if [ ! -f "$ID_FILE" ]; then
     cat /proc/sys/kernel/random/uuid > "$ID_FILE"
     chmod 600 "$ID_FILE" # Restrict permissions
@@ -72,7 +67,14 @@ else
     DATA_JSON="{\"uuid\":\"$UUID\",\"os\":\"$SAFE_OS\",\"cpu\":\"$SAFE_CPU\",\"ram\":\"$RAM\",\"disk\":\"$DISK\",\"script_name\":\"$SCRIPT_NAME\"}"
 fi
 
+# 11. Send Telemetry safely in background
 (
+    # Concurrency Lock (Prevent duplicate running within the same split second)
+    exec 9>/tmp/homeserver_telemetry.lock
+    if ! flock -n 9; then
+        exit 0
+    fi
+
     for i in 1 2 3; do
         response=$(curl --fail --silent --show-error -o /dev/null -w "%{http_code}" -X POST -m 10 "$SERVER_URL" \
             -H "Content-Type: application/json" \
