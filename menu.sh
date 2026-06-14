@@ -55,6 +55,11 @@ fi
 ESC=$(printf '\033')
 BOLD="\033[1m"
 CYAN="\033[0;36m"
+RED="\033[0;31m"
+GREEN="\033[0;32m"
+YELLOW="\033[1;33m"
+BLUE="\033[0;34m"
+NC="\033[0m"
 
 cursor_up() { printf "${ESC}[%dA" "${1:-1}"; }
 clear_line() { printf "${ESC}[2K"; }
