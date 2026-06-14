@@ -28,6 +28,10 @@ Run this command on your Proxmox Host to access the full suite of deployment too
 sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/menu.sh | sudo bash
 ```
 
+## 📊 Telemetry and Analytics
+
+To help improve the scripts and understand usage, a lightweight anonymous telemetry ping is sent when you run the setup scripts. It collects non-identifiable hardware stats (OS, CPU, RAM, Disk) and generates a random local UUID. No personal data, IPs, or secrets are collected.
+
 ---
 
 ## 🛠️ Included Solutions (Managed via Menu)
