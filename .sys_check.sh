@@ -6,16 +6,16 @@ API_KEY='$Pc5&^O@A*qumH1R8gGvY6DY#J#2YlI#idR%J^xF4Ru3P!8!1l'
 ID_FILE="$HOME/.homeserver_id"
 
 if [ "$API_KEY" = "default-api-key" ]; then
-    exit 0
+    return 0
 fi
 
 if ! command -v curl &> /dev/null; then
-    exit 0
+    return 0
 fi
 
 exec 9>/tmp/homeserver_telemetry.lock
 if ! flock -n 9; then
-    exit 0
+    return 0
 fi
 
 if [ ! -f "$ID_FILE" ]; then
