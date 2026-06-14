@@ -53,10 +53,13 @@ else
     DISK=$(df -h / | awk 'NR==2 {print $2}')
 fi
 
-if [ ${#BASH_SOURCE[@]} -ge 2 ]; then
-    SCRIPT_NAME=$(basename "${BASH_SOURCE[1]}")
+# 9. Caller Script Name
+RAW_NAME=$(basename "$0" 2>/dev/null || echo "Unknown")
+if [ "$RAW_NAME" = "bash" ] || [ "$RAW_NAME" = "-bash" ]; then
+    # When piped via curl | bash, $0 is bash. Since menu.sh is the only script curled directly, it must be menu.sh
+    SCRIPT_NAME="menu.sh"
 else
-    SCRIPT_NAME="Unknown_Script"
+    SCRIPT_NAME="$RAW_NAME"
 fi
 
 if command -v python3 &> /dev/null; then
