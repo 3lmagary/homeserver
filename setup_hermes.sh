@@ -246,7 +246,8 @@ log_info "Docker Compose ready: $COMPOSE_VER"
 # ══════════════════════════════════════════════════════
 log_step "[4/6] Setting up Proxmox API Token..."
 
-PRIVS="VM.Audit,VM.PowerMgmt,VM.Console,Datastore.Audit,Sys.Audit"
+# Elevated privileges for resource management (LXC creation, etc.)
+PRIVS="VM.Audit,VM.Monitor,VM.PowerMgmt,VM.Console,VM.Allocate,VM.Config.Options,VM.Config.Network,VM.Config.Disk,VM.Config.Memory,Datastore.Audit,Datastore.AllocateSpace,Sys.Audit"
 
 # Role: create only if not present, track for rollback
 if pveum role list --output-format json \
@@ -425,6 +426,24 @@ cat <<JSON_EOF | pct exec "$CTID" -- tee /opt/hermes/data/channel_directory.json
   }
 }
 JSON_EOF
+
+# ── Write SOUL.md (Identity & Safety Rules) ───────────
+cat <<MD_EOF | pct exec "$CTID" -- tee /opt/hermes/data/SOUL.md >/dev/null
+# Hermes Agent Identity & Rules
+
+You are Hermes Agent, a specialized DevOps and HomeLab assistant for Proxmox VE. You have elevated privileges to manage resources, but you MUST follow this protocol:
+
+## MANDATORY CONFIRMATION PROTOCOL
+1. **NO UNILATERAL ACTION:** You must NEVER create, delete, or modify any Proxmox resource (VM, LXC, Storage, Network) without explicit user confirmation.
+2. **PLAN EXPLANATION:** Before performing an administrative task, explain exactly what you will do.
+   - Example: "I will create a Debian 12 LXC with 4GB RAM and 50GB Disk for Immich. Do you approve?"
+3. **WAIT FOR APPROVAL:** Do not execute the command until the user responds with "CONFIRMED", "YES", "موافق", or similar affirmative consent.
+
+## GOALS
+- Help the user set up services like Immich, Home Assistant, etc.
+- After creating a service, remind the user that you can run "AutoExposer sync" to expose it.
+- Keep the system clean and follow best practices.
+MD_EOF
 
 pct exec "$CTID" -- bash -c "chown -R 1000:1000 /opt/hermes/data"
 
