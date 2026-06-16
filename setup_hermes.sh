@@ -184,38 +184,42 @@ read -r -p "OpenRouter API Key (leave blank to skip): " OPENROUTER_KEY < /dev/tt
 # ══════════════════════════════════════════════════════
 # [2/6] Create LXC Container
 # ══════════════════════════════════════════════════════
-log_step "[2/6] Creating LXC Container..."
+if pct status "$CTID" >/dev/null 2>&1; then
+  log_info "Container $CTID already exists — reusing it to save bandwidth."
+else
+  log_step "[2/6] Creating LXC Container..."
 
-pveam update >/dev/null 2>&1 || log_warn "pveam update failed — continuing with cached templates."
+  pveam update >/dev/null 2>&1 || log_warn "pveam update failed — continuing with cached templates."
 
-TEMPLATE=$(pveam list local 2>/dev/null | awk '/debian-12/ {print $1}' | head -n 1 || true)
-if [ -z "$TEMPLATE" ]; then
-  log_info "Downloading Debian 12 template..."
-  TMPL_NAME=$(pveam available -section system | awk '/debian-12-standard/ {print $2}' | head -n 1)
-  [ -z "$TMPL_NAME" ] && { log_error "Cannot find debian-12-standard in pveam!"; exit 1; }
-  pveam download local "$TMPL_NAME" >/dev/null
-  TEMPLATE=$(pveam list local | awk '/debian-12/ {print $1}' | head -n 1)
+  TEMPLATE=$(pveam list local 2>/dev/null | awk '/debian-12/ {print $1}' | head -n 1 || true)
+  if [ -z "$TEMPLATE" ]; then
+    log_info "Downloading Debian 12 template..."
+    TMPL_NAME=$(pveam available -section system | awk '/debian-12-standard/ {print $2}' | head -n 1)
+    [ -z "$TMPL_NAME" ] && { log_error "Cannot find debian-12-standard in pveam!"; exit 1; }
+    pveam download local "$TMPL_NAME" >/dev/null
+    TEMPLATE=$(pveam list local | awk '/debian-12/ {print $1}' | head -n 1)
+  fi
+  log_info "Using template: $TEMPLATE"
+
+  pct create "$CTID" "$TEMPLATE" \
+    --storage    "$TARGET_STORAGE" \
+    --rootfs     "$TARGET_STORAGE:30" \
+    --hostname   "Hermes-Agent" \
+    --net0       "name=eth0,bridge=vmbr0,ip=$STATIC_IP/24,gw=$GW" \
+    --unprivileged 1 \
+    --features   nesting=1,keyctl=1 \
+    --memory     4096 \
+    --cores      2 \
+    --swap       1024
+
+  CTID_CREATED=true
+  log_info "Container $CTID created."
 fi
-log_info "Using template: $TEMPLATE"
-
-pct create "$CTID" "$TEMPLATE" \
-  --storage    "$TARGET_STORAGE" \
-  --rootfs     "$TARGET_STORAGE:30" \
-  --hostname   "Hermes-Agent" \
-  --net0       "name=eth0,bridge=vmbr0,ip=$STATIC_IP/24,gw=$GW" \
-  --unprivileged 1 \
-  --features   nesting=1,keyctl=1 \
-  --memory     4096 \
-  --cores      2 \
-  --swap       1024
-
-CTID_CREATED=true
-log_info "Container $CTID created."
 
 # Firewall disabled for local HomeLab (ENABLE_FW=0).
 # To enable for production: set ENABLE_FW=1 in the configuration section above.
 
-pct start "$CTID"
+pct start "$CTID" 2>/dev/null || true
 
 log_info "Waiting for container network (timeout: 120s)..."
 ELAPSED=0
