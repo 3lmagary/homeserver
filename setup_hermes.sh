@@ -144,20 +144,45 @@ check_ip_conflict() {
 
 # Check auto-selected IP for conflicts
 if check_ip_conflict "$STATIC_IP"; then
-  log_warn "Auto-selected IP $STATIC_IP appears to be in use (ARP response)!"
-  log_warn "Please enter a different IP:"
-  while true; do
-    read -r -p "  Static IP [$STATIC_IP]: " ALT_IP < /dev/tty || true
-    ALT_IP=${ALT_IP:-$STATIC_IP}
-    if ! validate_ip "$ALT_IP"; then
-      log_warn "Invalid IPv4 '$ALT_IP'. Try again."; continue
+  EXISTING_CT_FILE=$(grep -l "ip=$STATIC_IP" /etc/pve/lxc/*.conf 2>/dev/null | head -n 1 || true)
+  if [ -n "$EXISTING_CT_FILE" ]; then
+    EXISTING_CTID=$(basename "$EXISTING_CT_FILE" .conf)
+    log_warn "IP $STATIC_IP is already assigned to Container $EXISTING_CTID."
+    read -r -p "Do you want to REUSE Container $EXISTING_CTID and its settings? [Y/n]: " REUSE_EXISTING < /dev/tty || true
+    if [[ ! "${REUSE_EXISTING,,}" == "n" ]]; then
+      CTID="$EXISTING_CTID"
+      log_info "Reusing Container $CTID. Bypassing IP conflict check."
+    else
+      log_warn "Please enter a different IP:"
+      while true; do
+        read -r -p "  Static IP [$STATIC_IP]: " ALT_IP < /dev/tty || true
+        ALT_IP=${ALT_IP:-$STATIC_IP}
+        if ! validate_ip "$ALT_IP"; then
+          log_warn "Invalid IPv4 '$ALT_IP'. Try again."; continue
+        fi
+        if check_ip_conflict "$ALT_IP"; then
+          log_warn "$ALT_IP also in use. Try again."; continue
+        fi
+        STATIC_IP="$ALT_IP"
+        break
+      done
     fi
-    if check_ip_conflict "$ALT_IP"; then
-      log_warn "$ALT_IP also in use. Try again."; continue
-    fi
-    STATIC_IP="$ALT_IP"
-    break
-  done
+  else
+    log_warn "Auto-selected IP $STATIC_IP appears to be in use (ARP response)!"
+    log_warn "Please enter a different IP:"
+    while true; do
+      read -r -p "  Static IP [$STATIC_IP]: " ALT_IP < /dev/tty || true
+      ALT_IP=${ALT_IP:-$STATIC_IP}
+      if ! validate_ip "$ALT_IP"; then
+        log_warn "Invalid IPv4 '$ALT_IP'. Try again."; continue
+      fi
+      if check_ip_conflict "$ALT_IP"; then
+        log_warn "$ALT_IP also in use. Try again."; continue
+      fi
+      STATIC_IP="$ALT_IP"
+      break
+    done
+  fi
 fi
 
 # ── Show auto-detected plan and confirm ──────────────
