@@ -353,44 +353,26 @@ log_info "Injecting Dockerfile and SSE wrapper for ProxmoxMCP..."
 pct exec "$CTID" -- bash -c "
   cd /opt/hermes/proxmox-mcp &&
   cat <<EOF > sse_wrapper.py
-import asyncio
 import os
 import logging
-from starlette.applications import Starlette
-from starlette.routing import Route, Mount
-from starlette.responses import Response
-from mcp.server.fastmcp import FastMCP
-from mcp.server.sse import SseServerTransport
+from proxmox_mcp.server import ProxmoxMCPServer
 import uvicorn
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("proxmox-mcp-sse")
+logger = logging.getLogger(\"proxmox-mcp-sse\")
 
-# The ProxmoxMCPServer uses FastMCP internally
-from proxmox_mcp.server import ProxmoxMCPServer
-
-pve_server = ProxmoxMCPServer()
-mcp = pve_server.mcp
-
-sse = SseServerTransport(\"/messages\")
-
-async def handle_sse(request):
-    async with sse.connect_sse(request.scope, request.receive, request.send) as (read_stream, write_stream):
-        await mcp.server.run(read_stream, write_stream, mcp.server.create_initialization_options())
-
-async def handle_messages(request):
-    await sse.handle_post_message(request.scope, request.receive, request.send)
-
-app = Starlette(
-    debug=True,
-    routes=[
-        Route(\"/sse\", endpoint=handle_sse),
-        Mount(\"/messages\", app=Starlette(routes=[Route(\"/\", endpoint=handle_messages, methods=[\"POST\"])]))
-    ],
-)
+try:
+    logger.info(\"Initializing ProxmoxMCPServer...\")
+    pve_server = ProxmoxMCPServer()
+    # FastMCP provides a built-in Starlette app for SSE
+    app = pve_server.mcp.sse_app()
+    logger.info(\"FastMCP SSE app created successfully.\")
+except Exception as e:
+    logger.error(f\"Failed to initialize server: {e}\")
+    raise
 
 if __name__ == \"__main__\":
-    logger.info(\"Starting ProxmoxMCP SSE Server on port 8380\")
+    logger.info(\"Starting Uvicorn on port 8380\")
     uvicorn.run(app, host=\"0.0.0.0\", port=8380)
 EOF
 
@@ -582,7 +564,8 @@ pct exec "$CTID" -- bash -c "chown -R 1000:1000 /opt/hermes/data"
 log_step "[6/6] Starting Services..."
 
 pct exec "$CTID" -- bash -c "cd /opt/hermes && docker compose up -d --build" || {
-  log_error "Docker Compose failed. Dumping logs for proxmox-mcp:"
+  log_error "Docker Compose failed. Waiting 5s for logs..."
+  sleep 5
   pct exec "$CTID" -- bash -c "cd /opt/hermes && docker compose logs proxmox-mcp"
   exit 1
 }
