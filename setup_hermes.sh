@@ -326,42 +326,53 @@ pct exec "$CTID" -- bash -c "
   cat <<EOF > sse_wrapper.py
 import asyncio
 import os
-import sys
 import logging
+from starlette.applications import Starlette
+from starlette.routing import Route, Mount
+from starlette.responses import Response
+from mcp.server.fastmcp import FastMCP
+from mcp.server.sse import SseServerTransport
+import uvicorn
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger('hermes-mcp')
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("proxmox-mcp-sse")
 
-try:
-    from proxmox_mcp.server import ProxmoxMCPServer
-except ImportError as e:
-    logger.error(f'Critical: Could not import ProxmoxMCPServer. Is the package installed? {e}')
-    sys.exit(1)
+# The ProxmoxMCPServer uses FastMCP internally
+from proxmox_mcp.server import ProxmoxMCPServer
 
-async def main():
-    try:
-        config_path = os.getenv('PROXMOX_MCP_CONFIG')
-        logger.info(f'Starting with config: {config_path}')
-        
-        server = ProxmoxMCPServer()
-        logger.info('ProxmoxMCPServer initialized. Starting SSE transport on 0.0.0.0:8380')
-        
-        # FastMCP run_async starts an SSE server on the given host/port
-        await server.mcp.run_async(transport='sse', host='0.0.0.0', port=8380)
-    except Exception as e:
-        logger.exception(f'Failed to run MCP server: {e}')
-        sys.exit(1)
+pve_server = ProxmoxMCPServer()
+mcp = pve_server.mcp
 
-if __name__ == '__main__':
-    asyncio.run(main())
+sse = SseServerTransport("/messages")
+
+async def handle_sse(request):
+    async with sse.connect_sse(request.scope, request.receive, request.send) as (read_stream, write_stream):
+        await mcp.server.run(read_stream, write_stream, mcp.server.create_initialization_options())
+
+async def handle_messages(request):
+    await sse.handle_post_message(request.scope, request.receive, request.send)
+
+app = Starlette(
+    debug=True,
+    routes=[
+        Route("/sse", endpoint=handle_sse),
+        Mount("/messages", app=Starlette(routes=[Route("/", endpoint=handle_messages, methods=["POST"])]))
+    ],
+)
+
+if __name__ == "__main__":
+    logger.info("Starting ProxmoxMCP SSE Server on port 8380")
+    uvicorn.run(app, host="0.0.0.0", port=8380)
 EOF
 
   cat <<EOF > Dockerfile
 FROM python:3.11-slim
 WORKDIR /app
-RUN apt-get update && apt-get install -y git netcat-openbsd && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git netcat-openbsd gcc python3-dev && rm -rf /var/lib/apt/lists/*
 COPY . .
-RUN pip install --no-cache-dir . uvicorn starlette fastmcp
+# Install the official MCP SDK from git as required by the project
+RUN pip install --no-cache-dir "mcp[fastmcp] @ git+https://github.com/modelcontextprotocol/python-sdk.git"
+RUN pip install --no-cache-dir . uvicorn starlette
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 CMD [\"python\", \"sse_wrapper.py\"]
