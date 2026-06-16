@@ -386,8 +386,12 @@ try:
             await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
 
     async def sse_endpoint(request):
-        # Convert the Starlette request to ASGI parameters and return the awaited response natively
-        return await handle_sse(request.scope, request.receive, request._send)
+        # The SseServerTransport manages its own ASGI response internally via EventSourceResponse.
+        # However, Starlette still expects the route handler to return a valid Response object
+        # to avoid throwing a NoneType error when the generator finishes.
+        await handle_sse(request.scope, request.receive, request._send)
+        from starlette.responses import Response
+        return Response()
 
     async def healthcheck(request):
         return JSONResponse({"status": "ok"})
