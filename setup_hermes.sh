@@ -162,15 +162,13 @@ if [[ "${CONFIRM,,}" == "n" ]]; then
 fi
 
 # ── Secrets (only what's truly needed) ───────────────
-read -r -s -p "Telegram Bot Token: " TG_TOKEN < /dev/tty || true
-echo ""
+read -r -p "Telegram Bot Token: " TG_TOKEN < /dev/tty || true
 [ -z "$TG_TOKEN" ] && { log_error "Telegram Bot Token cannot be empty!"; exit 1; }
 
 read -r -p "Telegram User ID: " TG_UID < /dev/tty || true
 [ -z "$TG_UID" ]   && { log_error "Telegram User ID cannot be empty!"; exit 1; }
 
-read -r -s -p "OpenRouter API Key (leave blank to skip): " OPENROUTER_KEY < /dev/tty || true
-echo ""
+read -r -p "OpenRouter API Key (leave blank to skip): " OPENROUTER_KEY < /dev/tty || true
 
 # ══════════════════════════════════════════════════════
 # [2/6] Create LXC Container
