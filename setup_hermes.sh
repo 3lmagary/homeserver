@@ -309,17 +309,32 @@ else
 fi
 
 # ── Inject Dockerfile & Config for ProxmoxMCP ────────
-log_info "Injecting Dockerfile and config for ProxmoxMCP..."
+log_info "Injecting Dockerfile and SSE wrapper for ProxmoxMCP..."
 pct exec "$CTID" -- bash -c "
   cd /opt/hermes/proxmox-mcp &&
+  cat <<EOF > sse_wrapper.py
+import anyio
+import os
+from proxmox_mcp.server import ProxmoxMCPServer
+
+async def main():
+    # ProxmoxMCPServer loads config from PROXMOX_MCP_CONFIG env var
+    server = ProxmoxMCPServer()
+    # Run using SSE transport on port 8380
+    await server.mcp.run_async(transport='sse', host='0.0.0.0', port=8380)
+
+if __name__ == '__main__':
+    anyio.run(main)
+EOF
+
   cat <<EOF > Dockerfile
 FROM python:3.11-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y git netcat-openbsd && rm -rf /var/lib/apt/lists/*
 COPY . .
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . uvicorn starlette
 ENV PYTHONPATH=/app/src
-CMD [\"python\", \"-m\", \"proxmox_mcp.server\"]
+CMD [\"python\", \"sse_wrapper.py\"]
 EOF
 
   mkdir -p proxmox-config
@@ -342,6 +357,13 @@ EOF
 }
 EOF
 "
+
+# ── Write Hermes config.yaml ──────────────────────────
+cat <<YAML_EOF | pct exec "$CTID" -- tee /opt/hermes/data/config.yaml >/dev/null
+mcp_servers:
+  proxmox:
+    url: "http://proxmox-mcp:8380/sse"
+YAML_EOF
 
 # ── Write .env (600 permissions immediately after) ────
 ENV_CONTENT="PROXMOX_API_URL=https://${PVE_HOST}:8006/api2/json
@@ -400,6 +422,7 @@ services:
     env_file: .env
     environment:
       - DOCKER_HOST=tcp://docker-proxy:2375
+      - HERMES_CONFIG_PATH=/opt/data
     ports:
       - "8642:8642"
       - "9119:9119"
