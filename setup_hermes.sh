@@ -357,7 +357,7 @@ import logging
 import sys
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 import uvicorn
 from mcp.server.sse import SseServerTransport
 
@@ -376,20 +376,18 @@ try:
         sys.exit(1)
 
     pve_server = ProxmoxMCPServer(config_path)
-    # Get the underlying Server object from FastMCP
     mcp_server = pve_server.mcp._mcp_server
     
-    # Manually configure SSE transport to bypass restrictive host validation
     sse = SseServerTransport("/messages")
 
     async def handle_sse(request):
-        # SseServerTransport expects raw ASGI scope, receive, and send.
-        # Starlette exposes send as the private attribute _send.
         async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
             await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
+        return Response()
 
     async def handle_messages(request):
         await sse.handle_post_message(request.scope, request.receive, request._send)
+        return Response()
 
     async def healthcheck(request):
         return JSONResponse({"status": "ok"})
