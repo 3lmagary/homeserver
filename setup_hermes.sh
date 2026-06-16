@@ -292,10 +292,18 @@ CMD [\"python\", \"-c\", \"import sys; from duckduckgo_mcp_server.server import 
 EOF
 "
 
-# Hermes config.yaml (Stable Model + SSE MCPs)
+# Hermes config.yaml (Final Stable Version: Model + 3 MCPs)
 cat <<'YAML_EOF' | pct exec "$CTID" -- tee /opt/hermes/data/config.yaml >/dev/null
 model: "openrouter/owl-alpha"
 mcp_servers:
+  proxmox:
+    command: "npx"
+    args: ["-y", "mcp-proxmoxer"]
+    env:
+      PVE_URL: "https://${PVE_HOST}:8006"
+      PVE_TOKEN_ID: "hermes-agent@pve!hermes-token"
+      PVE_TOKEN_SECRET: "${TOKEN_SECRET}"
+      PVE_VERIFY_SSL: "false"
   docker:
     description: Docker Container Management
     transport: sse
