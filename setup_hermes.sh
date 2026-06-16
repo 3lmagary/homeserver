@@ -384,14 +384,14 @@ async def handle_messages(request):
 app = Starlette(
     debug=True,
     routes=[
-        Route("/sse", endpoint=handle_sse),
-        Mount("/messages", app=Starlette(routes=[Route("/", endpoint=handle_messages, methods=["POST"])]))
+        Route(\"/sse\", endpoint=handle_sse),
+        Mount(\"/messages\", app=Starlette(routes=[Route(\"/\", endpoint=handle_messages, methods=[\"POST\"])]))
     ],
 )
 
-if __name__ == "__main__":
-    logger.info("Starting ProxmoxMCP SSE Server on port 8380")
-    uvicorn.run(app, host="0.0.0.0", port=8380)
+if __name__ == \"__main__\":
+    logger.info(\"Starting ProxmoxMCP SSE Server on port 8380\")
+    uvicorn.run(app, host=\"0.0.0.0\", port=8380)
 EOF
 
   cat <<EOF > Dockerfile
