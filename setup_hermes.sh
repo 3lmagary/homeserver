@@ -528,6 +528,8 @@ services:
     restart: unless-stopped
     ports:
       - "8380:8380"
+    volumes:
+      - ./proxmox-mcp/proxmox-config:/app/proxmox-config:ro
     env_file: .env
     environment:
       - PROXMOX_HOST=https://${PVE_HOST}:8006
