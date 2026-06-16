@@ -521,6 +521,7 @@ services:
     image: ${HERMES_IMAGE}
     container_name: hermes
     restart: unless-stopped
+    command: ["--insecure"]
     tty: true
     stdin_open: true
     env_file: .env
