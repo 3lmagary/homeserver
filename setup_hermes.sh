@@ -315,7 +315,7 @@ pct exec "$CTID" -- bash -c "
   cat <<EOF > Dockerfile
 FROM python:3.11-slim
 WORKDIR /app
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y git netcat-openbsd && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN pip install --no-cache-dir .
 ENV PYTHONPATH=/app/src
@@ -415,10 +415,13 @@ services:
     depends_on:
       docker-proxy:
         condition: service_healthy
+      proxmox-mcp:
+        condition: service_healthy
     networks:
       - hermes-net
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 8642 || exit 1"]
+      # Use bash builtin to check port if nc is missing
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/8642' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
