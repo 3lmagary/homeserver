@@ -355,6 +355,11 @@ cat <<'EOF' > /tmp/hermes_sse_wrapper.py
 import os
 import logging
 import sys
+from starlette.applications import Starlette
+from starlette.routing import Route, Mount
+from starlette.responses import JSONResponse
+import uvicorn
+from mcp.server.sse import SseServerTransport
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("proxmox-mcp-sse")
@@ -362,7 +367,6 @@ logger = logging.getLogger("proxmox-mcp-sse")
 try:
     logger.info("Starting initialization...")
     from proxmox_mcp.server import ProxmoxMCPServer
-    import uvicorn
     
     config_path = os.getenv("PROXMOX_MCP_CONFIG")
     logger.info(f"Using configuration file: {config_path}")
@@ -372,8 +376,32 @@ try:
         sys.exit(1)
 
     pve_server = ProxmoxMCPServer(config_path)
-    app = pve_server.mcp.sse_app()
-    logger.info("FastMCP SSE app created successfully.")
+    # Get the underlying Server object from FastMCP
+    mcp_server = pve_server.mcp._mcp_server
+    
+    # Manually configure SSE transport to bypass restrictive host validation
+    sse = SseServerTransport("/messages")
+
+    async def handle_sse(request):
+        async with sse.connect_sse(request.scope, request.receive, request.send) as (read_stream, write_stream):
+            await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
+
+    async def handle_messages(request):
+        await sse.handle_post_message(request.scope, request.receive, request.send)
+
+    async def healthcheck(request):
+        return JSONResponse({"status": "ok"})
+
+    app = Starlette(
+        debug=True,
+        routes=[
+            Route("/sse", endpoint=handle_sse),
+            Mount("/messages", app=Starlette(routes=[Route("/", endpoint=handle_messages, methods=["POST"])])),
+            Route("/health", endpoint=healthcheck)
+        ],
+    )
+    
+    logger.info("Manual SSE routing configured successfully.")
 except Exception as e:
     logger.error(f"Failed to initialize server: {e}", exc_info=True)
     sys.exit(1)
@@ -475,6 +503,8 @@ services:
       - EVENTS=1
       - EXEC=1    # Required for Hermes agent operations — remove if read-only is sufficient
       - POST=1    # Required for Hermes agent operations — remove if read-only is sufficient
+    labels:
+      - "autoexposer.enable=false"
     expose:
       - "2375"
     networks:
@@ -491,6 +521,8 @@ services:
     image: ${HERMES_IMAGE}
     container_name: hermes
     restart: unless-stopped
+    tty: true
+    stdin_open: true
     env_file: .env
     environment:
       - DOCKER_HOST=tcp://docker-proxy:2375
