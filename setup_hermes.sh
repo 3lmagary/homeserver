@@ -354,10 +354,9 @@ services:
       - "autoexposer.enable=true"
       - "autoexposer.name=Hermes"
       - "autoexposer.group=AI & Agents"
-      - "autoexposer.icon=https://raw.githubusercontent.com/3lmagary/homeserver/main/Graphics/hermes.png"
+      - "autoexposer.icon=https://agentlocker.ai/static/uploads/ac3292ea-f056-4667-a3a8-f3c5e1467242_hermes.webp"
       - "autoexposer.port=9119"
-      - "autoexposer.subdomain=hermes"
-    depends_on:
+      - "autoexposer.subdomain=hermes"    depends_on:
       docker-proxy: { condition: service_healthy }
       proxmox-mcp: { condition: service_started }
     networks: [ hermes-net ]
