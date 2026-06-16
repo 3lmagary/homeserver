@@ -294,7 +294,7 @@ EOF
 
 # Hermes config.yaml (Stable Model + SSE MCPs)
 cat <<'YAML_EOF' | pct exec "$CTID" -- tee /opt/hermes/data/config.yaml >/dev/null
-model: "anthropic/claude-3.5-sonnet"
+model: "google/gemini-2.0-flash-001"
 mcp_servers:
   docker:
     description: Docker Container Management
