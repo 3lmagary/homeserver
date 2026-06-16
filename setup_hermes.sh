@@ -371,7 +371,7 @@ try:
         logger.error(f"Configuration file not found at: {config_path}")
         sys.exit(1)
 
-    pve_server = ProxmoxMCPServer()
+    pve_server = ProxmoxMCPServer(config_path)
     app = pve_server.mcp.sse_app()
     logger.info("FastMCP SSE app created successfully.")
 except Exception as e:
