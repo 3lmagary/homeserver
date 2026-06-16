@@ -245,7 +245,7 @@ log_info "Docker Compose ready: $COMPOSE_VER"
 log_step "[4/6] Setting up Proxmox API Token..."
 
 # Elevated privileges for resource management (LXC creation, etc.)
-PRIVS="VM.Audit,VM.Monitor,VM.PowerMgmt,VM.Console,VM.Allocate,VM.Config.Options,VM.Config.Network,VM.Config.Disk,VM.Config.Memory,Datastore.Audit,Datastore.AllocateSpace,Sys.Audit"
+PRIVS="VM.Audit,VM.PowerMgmt,VM.Console,VM.Allocate,VM.Config.Options,VM.Config.Network,VM.Config.Disk,VM.Config.Memory,Datastore.Audit,Datastore.AllocateSpace,Sys.Audit"
 
 # Role: create only if not present, track for rollback
 if pveum role list --output-format json \
