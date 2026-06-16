@@ -58,6 +58,9 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
                         k, v = item.split("=", 1)
                         labels[k] = v
 
+            if labels.get("autoexposer.enable") == "false":
+                continue
+
             # If container has autoexposer labels, use them
             if labels.get("autoexposer.enable") == "true":
                 port = int(labels.get("autoexposer.port", _parse_port(ports, 80)))
