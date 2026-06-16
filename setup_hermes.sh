@@ -313,18 +313,36 @@ log_info "Injecting Dockerfile and SSE wrapper for ProxmoxMCP..."
 pct exec "$CTID" -- bash -c "
   cd /opt/hermes/proxmox-mcp &&
   cat <<EOF > sse_wrapper.py
-import anyio
+import asyncio
 import os
-from proxmox_mcp.server import ProxmoxMCPServer
+import sys
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('hermes-mcp')
+
+try:
+    from proxmox_mcp.server import ProxmoxMCPServer
+except ImportError as e:
+    logger.error(f'Critical: Could not import ProxmoxMCPServer. Is the package installed? {e}')
+    sys.exit(1)
 
 async def main():
-    # ProxmoxMCPServer loads config from PROXMOX_MCP_CONFIG env var
-    server = ProxmoxMCPServer()
-    # Run using SSE transport on port 8380
-    await server.mcp.run_async(transport='sse', host='0.0.0.0', port=8380)
+    try:
+        config_path = os.getenv('PROXMOX_MCP_CONFIG')
+        logger.info(f'Starting with config: {config_path}')
+        
+        server = ProxmoxMCPServer()
+        logger.info('ProxmoxMCPServer initialized. Starting SSE transport on 0.0.0.0:8380')
+        
+        # FastMCP run_async starts an SSE server on the given host/port
+        await server.mcp.run_async(transport='sse', host='0.0.0.0', port=8380)
+    except Exception as e:
+        logger.exception(f'Failed to run MCP server: {e}')
+        sys.exit(1)
 
 if __name__ == '__main__':
-    anyio.run(main)
+    asyncio.run(main())
 EOF
 
   cat <<EOF > Dockerfile
@@ -332,8 +350,9 @@ FROM python:3.11-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y git netcat-openbsd && rm -rf /var/lib/apt/lists/*
 COPY . .
-RUN pip install --no-cache-dir . uvicorn starlette
+RUN pip install --no-cache-dir . uvicorn starlette fastmcp
 ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
 CMD [\"python\", \"sse_wrapper.py\"]
 EOF
 
@@ -467,7 +486,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 20s
+      start_period: 45s
 
 networks:
   hermes-net:
@@ -511,7 +530,11 @@ pct exec "$CTID" -- bash -c "chown -R 1000:1000 /opt/hermes/data"
 # ══════════════════════════════════════════════════════
 log_step "[6/6] Starting Services..."
 
-pct exec "$CTID" -- bash -c "cd /opt/hermes && docker compose up -d --build"
+pct exec "$CTID" -- bash -c "cd /opt/hermes && docker compose up -d --build" || {
+  log_error "Docker Compose failed. Dumping logs for proxmox-mcp:"
+  pct exec "$CTID" -- bash -c "cd /opt/hermes && docker compose logs proxmox-mcp"
+  exit 1
+}
 
 # Wait for hermes to become `healthy` (not just `running`)
 log_info "Waiting for Hermes container to become healthy (timeout: 90s)..."
