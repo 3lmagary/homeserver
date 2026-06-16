@@ -613,7 +613,7 @@ You are Hermes Agent, a specialized DevOps and HomeLab assistant for Proxmox VE.
 - Keep the system clean and follow best practices.
 MD_EOF
 
-pct exec "$CTID" -- bash -c "chown -R 1000:1000 /opt/hermes/data"
+pct exec "$CTID" -- bash -c "chown -R 10000:10000 /opt/hermes/data"
 
 # ══════════════════════════════════════════════════════
 # [6/6] Launch & Health Verification
