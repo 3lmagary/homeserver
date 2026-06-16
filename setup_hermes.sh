@@ -308,6 +308,41 @@ else
   " || log_warn "Could not checkout ref '$PROXMOX_MCP_REF' — using default branch."
 fi
 
+# ── Inject Dockerfile & Config for ProxmoxMCP ────────
+log_info "Injecting Dockerfile and config for ProxmoxMCP..."
+pct exec "$CTID" -- bash -c "
+  cd /opt/hermes/proxmox-mcp &&
+  cat <<EOF > Dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+COPY . .
+RUN pip install --no-cache-dir .
+ENV PYTHONPATH=/app/src
+CMD [\"python\", \"-m\", \"proxmox_mcp.server\"]
+EOF
+
+  mkdir -p proxmox-config
+  cat <<EOF > proxmox-config/config.json
+{
+  \"proxmox\": {
+    \"host\": \"${PVE_HOST}\",
+    \"port\": 8006,
+    \"verify_ssl\": ${VERIFY_SSL},
+    \"service\": \"PVE\"
+  },
+  \"auth\": {
+    \"user\": \"hermes-agent@pve\",
+    \"token_name\": \"hermes-token\",
+    \"token_value\": \"${TOKEN_SECRET}\"
+  },
+  \"logging\": {
+    \"level\": \"INFO\"
+  }
+}
+EOF
+"
+
 # ── Write .env (600 permissions immediately after) ────
 ENV_CONTENT="PROXMOX_API_URL=https://${PVE_HOST}:8006/api2/json
 PROXMOX_TOKEN_ID=hermes-agent@pve!hermes-token
