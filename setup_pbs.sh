@@ -1,4 +1,5 @@
 #!/bin/bash
+source <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/.sys_check.sh)
 set -Eeuo pipefail
 
 # ==========================================
