@@ -348,101 +348,13 @@ else
   " || log_warn "Could not checkout ref '$PROXMOX_MCP_REF' — using default branch."
 fi
 
-# ── Inject Dockerfile & Config for ProxmoxMCP ────────
-log_info "Injecting Dockerfile and SSE wrapper for ProxmoxMCP..."
-# Use a temporary file on the host to avoid complex escaping with pct exec
-cat <<'EOF' > /tmp/hermes_sse_wrapper.py
-import os
-import logging
-import sys
-from starlette.applications import Starlette
-from starlette.routing import Route, Mount
-from starlette.responses import JSONResponse, Response
-import uvicorn
-from mcp.server.sse import SseServerTransport
+# ── Setup ProxmoxMCP for Hermes ───────────────────────
+log_info "Configuring ProxmoxMCP for stdio execution inside Hermes..."
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("proxmox-mcp-sse")
-
-try:
-    logger.info("Starting initialization...")
-    from proxmox_mcp.server import ProxmoxMCPServer
-    
-    config_path = os.getenv("PROXMOX_MCP_CONFIG")
-    logger.info(f"Using configuration file: {config_path}")
-    
-    if not config_path or not os.path.exists(config_path):
-        logger.error(f"Configuration file not found at: {config_path}")
-        sys.exit(1)
-
-    pve_server = ProxmoxMCPServer(config_path)
-    mcp_server = pve_server.mcp._mcp_server
-    
-    # FastMCP clients expect the endpoint URL to be exactly the same as returned by the endpoint event
-    sse = SseServerTransport("/messages")
-
-    async def handle_sse(scope, receive, send):
-        async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
-            await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
-
-    async def sse_endpoint(request):
-        # The SseServerTransport manages its own ASGI response internally via EventSourceResponse.
-        # However, Starlette still expects the route handler to return a valid Response object
-        # to avoid throwing a NoneType error when the generator finishes.
-        await handle_sse(request.scope, request.receive, request._send)
-        from starlette.responses import Response
-        return Response()
-
-    async def healthcheck(request):
-        return JSONResponse({"status": "ok"})
-
-    app = Starlette(
-        debug=True,
-        routes=[
-            Route("/sse", endpoint=sse_endpoint, methods=["GET", "POST"]), # Accept POST fallback just in case
-            Mount("/messages", app=sse.handle_post_message),
-            Route("/health", endpoint=healthcheck)
-        ],
-    )
-    
-    logger.info("Manual SSE routing configured successfully.")
-except Exception as e:
-    logger.error(f"Failed to initialize server: {e}", exc_info=True)
-    sys.exit(1)
-
-if __name__ == "__main__":
-    logger.info("Launching Uvicorn on 0.0.0.0:8380")
-    uvicorn.run(app, host="0.0.0.0", port=8380, log_level="info")
-EOF
-
-cat <<'EOF' > /tmp/hermes_dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-RUN apt-get update && apt-get install -y git netcat-openbsd gcc python3-dev && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
-COPY . .
-# CRITICAL FIX: The official MCP python-sdk master branch moved to v2.0, removing fastmcp.
-# We must patch pyproject.toml to use the stable PyPI release instead of the git link.
-RUN sed -i 's|mcp @ git+https://github.com/modelcontextprotocol/python-sdk.git|mcp[fastmcp]>=1.2.0|g' pyproject.toml || true
-RUN sed -i 's|mcp @ git+https://github.com/modelcontextprotocol/python-sdk.git|mcp[fastmcp]>=1.2.0|g' requirements.in || true
-
-# Install stable dependencies
-RUN pip install --no-cache-dir "mcp[fastmcp]" starlette sse-starlette uvicorn anyio python-dotenv
-# Install ProxmoxMCP
-RUN pip install --no-cache-dir .
-ENV PYTHONPATH=/app/src
-ENV PYTHONUNBUFFERED=1
-CMD ["python", "sse_wrapper.py"]
-EOF
-
-# Push files to container
-pct exec "$CTID" -- bash -c "mkdir -p /opt/hermes/proxmox-mcp/proxmox-config"
-cat /tmp/hermes_sse_wrapper.py | pct exec "$CTID" -- tee /opt/hermes/proxmox-mcp/sse_wrapper.py >/dev/null
-cat /tmp/hermes_dockerfile | pct exec "$CTID" -- tee /opt/hermes/proxmox-mcp/Dockerfile >/dev/null
-
-# Create config.json with absolute path reference
+# Create config.json with absolute path reference in the shared data volume
+pct exec "$CTID" -- bash -c "mkdir -p /opt/hermes/data/proxmox-config"
 pct exec "$CTID" -- bash -c "
-  cat <<EOF > /opt/hermes/proxmox-mcp/proxmox-config/config.json
+  cat <<EOF > /opt/hermes/data/proxmox-config/config.json
 {
   \"proxmox\": {
     \"host\": \"${PVE_HOST}\",
@@ -466,7 +378,10 @@ EOF
 cat <<YAML_EOF | pct exec "$CTID" -- tee /opt/hermes/data/config.yaml >/dev/null
 mcp_servers:
   proxmox:
-    url: "http://proxmox-mcp:8380/sse"
+    command: "python"
+    args: ["-m", "proxmox_mcp.server"]
+    env:
+      PROXMOX_MCP_CONFIG: "/opt/data/proxmox-config/config.json"
 YAML_EOF
 
 # ── Write .env (600 permissions immediately after) ────
@@ -547,8 +462,6 @@ services:
     depends_on:
       docker-proxy:
         condition: service_healthy
-      proxmox-mcp:
-        condition: service_healthy
     networks:
       hermes-net:
         aliases:
@@ -560,29 +473,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 90s
-
-  proxmox-mcp:
-    build: ./proxmox-mcp
-    container_name: proxmox-mcp
-    restart: unless-stopped
-    ports:
-      - "8380:8380"
-    volumes:
-      - ./proxmox-mcp/proxmox-config:/app/proxmox-config:ro
-    env_file: .env
-    environment:
-      - PROXMOX_HOST=https://${PVE_HOST}:8006
-      - PROXMOX_MCP_CONFIG=/app/proxmox-config/config.json
-    networks:
-      hermes-net:
-        aliases:
-          - proxmox-mcp
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 8380 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 45s
 
 networks:
   hermes-net:
