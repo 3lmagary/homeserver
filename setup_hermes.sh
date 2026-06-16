@@ -382,12 +382,12 @@ try:
     # Manually configure SSE transport to bypass restrictive host validation
     sse = SseServerTransport("/messages")
 
-    async def handle_sse(request):
-        async with sse.connect_sse(request.scope, request.receive, request.send) as (read_stream, write_stream):
+    async def handle_sse(scope, receive, send):
+        async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
             await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
 
-    async def handle_messages(request):
-        await sse.handle_post_message(request.scope, request.receive, request.send)
+    async def handle_messages(scope, receive, send):
+        await sse.handle_post_message(scope, receive, send)
 
     async def healthcheck(request):
         return JSONResponse({"status": "ok"})
