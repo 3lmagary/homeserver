@@ -53,7 +53,18 @@ TOKEN_PREEXISTED=false
 cleanup_on_error() {
   local exit_code=$?
   [ $exit_code -eq 0 ] && return
-  log_warn "Setup failed (exit $exit_code). Rolling back ONLY what was created in this run..."
+  echo ""
+  log_error "Setup failed at some point (exit $exit_code)."
+  log_warn "To save bandwidth, you can keep the downloaded images and containers for inspection."
+  read -r -p "Do you want to ROLLBACK and delete everything created so far? [y/N]: " CONFIRM_ROLLBACK < /dev/tty || true
+  
+  if [[ ! "${CONFIRM_ROLLBACK,,}" == "y" ]]; then
+    log_info "Keeping resources as-is. You can inspect or retry later."
+    trap - EXIT
+    return
+  fi
+
+  log_warn "Rolling back ONLY what was created in this run..."
   # Only delete token if WE created it AND it didn't pre-exist.
   # If it pre-existed, we already rotated it — deleting now would leave no token at all.
   if $TOKEN_CREATED && ! $TOKEN_PREEXISTED; then
