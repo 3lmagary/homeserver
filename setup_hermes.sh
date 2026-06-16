@@ -452,6 +452,7 @@ services:
       - "9119:9119"
     volumes:
       - ./data:/opt/data
+      - ./proxmox-mcp:/opt/hermes/proxmox-mcp:ro
     labels:
       - "autoexposer.enable=true"
       - "autoexposer.name=Hermes"
