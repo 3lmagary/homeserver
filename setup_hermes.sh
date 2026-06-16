@@ -350,47 +350,60 @@ fi
 
 # ── Inject Dockerfile & Config for ProxmoxMCP ────────
 log_info "Injecting Dockerfile and SSE wrapper for ProxmoxMCP..."
-pct exec "$CTID" -- bash -c "
-  cd /opt/hermes/proxmox-mcp &&
-  cat <<EOF > sse_wrapper.py
+# Use a temporary file on the host to avoid complex escaping with pct exec
+cat <<'EOF' > /tmp/hermes_sse_wrapper.py
 import os
 import logging
-from proxmox_mcp.server import ProxmoxMCPServer
-import uvicorn
+import sys
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(\"proxmox-mcp-sse\")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("proxmox-mcp-sse")
 
 try:
-    logger.info(\"Initializing ProxmoxMCPServer...\")
-    pve_server = ProxmoxMCPServer()
-    # FastMCP provides a built-in Starlette app for SSE
-    app = pve_server.mcp.sse_app()
-    logger.info(\"FastMCP SSE app created successfully.\")
-except Exception as e:
-    logger.error(f\"Failed to initialize server: {e}\")
-    raise
+    logger.info("Starting initialization...")
+    from proxmox_mcp.server import ProxmoxMCPServer
+    import uvicorn
+    
+    config_path = os.getenv("PROXMOX_MCP_CONFIG")
+    logger.info(f"Using configuration file: {config_path}")
+    
+    if not config_path or not os.path.exists(config_path):
+        logger.error(f"Configuration file not found at: {config_path}")
+        sys.exit(1)
 
-if __name__ == \"__main__\":
-    logger.info(\"Starting Uvicorn on port 8380\")
-    uvicorn.run(app, host=\"0.0.0.0\", port=8380)
+    pve_server = ProxmoxMCPServer()
+    app = pve_server.mcp.sse_app()
+    logger.info("FastMCP SSE app created successfully.")
+except Exception as e:
+    logger.error(f"Failed to initialize server: {e}", exc_info=True)
+    sys.exit(1)
+
+if __name__ == "__main__":
+    logger.info("Launching Uvicorn on 0.0.0.0:8380")
+    uvicorn.run(app, host="0.0.0.0", port=8380, log_level="info")
 EOF
 
-  cat <<EOF > Dockerfile
+cat <<'EOF' > /tmp/hermes_dockerfile
 FROM python:3.11-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y git netcat-openbsd gcc python3-dev && rm -rf /var/lib/apt/lists/*
 COPY . .
 # Install the official MCP SDK from git as required by the project
 RUN pip install --no-cache-dir "mcp[fastmcp] @ git+https://github.com/modelcontextprotocol/python-sdk.git"
-RUN pip install --no-cache-dir . uvicorn starlette
+RUN pip install --no-cache-dir . uvicorn starlette sse-starlette anyio
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
-CMD [\"python\", \"sse_wrapper.py\"]
+CMD ["python", "sse_wrapper.py"]
 EOF
 
-  mkdir -p proxmox-config
-  cat <<EOF > proxmox-config/config.json
+# Push files to container
+pct exec "$CTID" -- bash -c "mkdir -p /opt/hermes/proxmox-mcp/proxmox-config"
+cat /tmp/hermes_sse_wrapper.py | pct exec "$CTID" -- tee /opt/hermes/proxmox-mcp/sse_wrapper.py >/dev/null
+cat /tmp/hermes_dockerfile | pct exec "$CTID" -- tee /opt/hermes/proxmox-mcp/Dockerfile >/dev/null
+
+# Create config.json with absolute path reference
+pct exec "$CTID" -- bash -c "
+  cat <<EOF > /opt/hermes/proxmox-mcp/proxmox-config/config.json
 {
   \"proxmox\": {
     \"host\": \"${PVE_HOST}\",
@@ -511,7 +524,7 @@ services:
     env_file: .env
     environment:
       - PROXMOX_HOST=https://${PVE_HOST}:8006
-      - PROXMOX_MCP_CONFIG=proxmox-config/config.json
+      - PROXMOX_MCP_CONFIG=/app/proxmox-config/config.json
     networks:
       - hermes-net
     healthcheck:
