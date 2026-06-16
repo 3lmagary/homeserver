@@ -330,6 +330,8 @@ services:
     volumes: [ /var/run/docker.sock:/var/run/docker.sock:ro ]
     environment: [ CONTAINERS=1, IMAGES=1, NETWORKS=1, VOLUMES=1, EVENTS=1, EXEC=1, POST=1 ]
     networks: [ hermes-net ]
+    labels:
+      - "autoexposer.enable=false"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:2375/version >/dev/null 2>&1 || exit 1"]
       interval: 15s
@@ -344,6 +346,13 @@ services:
     environment: [ DOCKER_HOST=tcp://docker-proxy:2375, HERMES_CONFIG_PATH=/opt/data ]
     ports: [ "8642:8642", "9119:9119" ]
     volumes: [ ./data:/opt/data ]
+    labels:
+      - "autoexposer.enable=true"
+      - "autoexposer.name=Hermes"
+      - "autoexposer.group=AI & Agents"
+      - "autoexposer.icon=terminal"
+      - "autoexposer.port=8642"
+      - "autoexposer.subdomain=hermes"
     depends_on:
       docker-proxy: { condition: service_healthy }
       proxmox-mcp: { condition: service_started }
