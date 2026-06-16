@@ -292,17 +292,10 @@ CMD [\"python\", \"-c\", \"import sys; from duckduckgo_mcp_server.server import 
 EOF
 "
 
-# Hermes config.yaml (Stable Node.js Proxmox MCP + SSE for others)
+# Hermes config.yaml (Stable Model + SSE MCPs)
 cat <<'YAML_EOF' | pct exec "$CTID" -- tee /opt/hermes/data/config.yaml >/dev/null
+model: "anthropic/claude-3.5-sonnet"
 mcp_servers:
-  proxmox:
-    command: "npx"
-    args: ["-y", "@canvrno/proxmox-mcp"]
-    env:
-      PROXMOX_URL: "https://${PVE_HOST}:8006"
-      PROXMOX_TOKEN_ID: "hermes-agent@pve!hermes-token"
-      PROXMOX_TOKEN_SECRET: "${TOKEN_SECRET}"
-      PROXMOX_VERIFY_SSL: "false"
   docker:
     description: Docker Container Management
     transport: sse
@@ -368,6 +361,7 @@ services:
     ports: [ "8380:8380" ]
     volumes: [ ./proxmox-mcp/proxmox-config:/app/proxmox-config ]
     environment: [ PROXMOX_MCP_CONFIG=proxmox-config/config.json ]
+    labels: [ "autoexposer.enable=false" ]
     networks: [ hermes-net ]
 
   docker-mcp:
@@ -375,6 +369,7 @@ services:
     container_name: docker-mcp
     restart: unless-stopped
     environment: [ DOCKER_HOST=tcp://docker-proxy:2375 ]
+    labels: [ "autoexposer.enable=false" ]
     depends_on: [ docker-proxy ]
     networks: [ hermes-net ]
 
@@ -382,6 +377,7 @@ services:
     build: ./duckduckgo-mcp
     container_name: duckduckgo-mcp
     restart: unless-stopped
+    labels: [ "autoexposer.enable=false" ]
     networks: [ hermes-net ]
 
 networks:
