@@ -550,14 +550,16 @@ services:
       proxmox-mcp:
         condition: service_healthy
     networks:
-      - hermes-net
+      hermes-net:
+        aliases:
+          - hermes
     healthcheck:
       # Use bash builtin to check port if nc is missing
       test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/localhost/8642' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 90s
 
   proxmox-mcp:
     build: ./proxmox-mcp
@@ -572,7 +574,9 @@ services:
       - PROXMOX_HOST=https://${PVE_HOST}:8006
       - PROXMOX_MCP_CONFIG=/app/proxmox-config/config.json
     networks:
-      - hermes-net
+      hermes-net:
+        aliases:
+          - proxmox-mcp
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 8380 || exit 1"]
       interval: 30s
