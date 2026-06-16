@@ -382,12 +382,14 @@ try:
     # Manually configure SSE transport to bypass restrictive host validation
     sse = SseServerTransport("/messages")
 
-    async def handle_sse(scope, receive, send):
-        async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
+    async def handle_sse(request):
+        # SseServerTransport expects raw ASGI scope, receive, and send.
+        # Starlette exposes send as the private attribute _send.
+        async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
             await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
 
-    async def handle_messages(scope, receive, send):
-        await sse.handle_post_message(scope, receive, send)
+    async def handle_messages(request):
+        await sse.handle_post_message(request.scope, request.receive, request._send)
 
     async def healthcheck(request):
         return JSONResponse({"status": "ok"})
@@ -396,7 +398,7 @@ try:
         debug=True,
         routes=[
             Route("/sse", endpoint=handle_sse),
-            Mount("/messages", app=Starlette(routes=[Route("/", endpoint=handle_messages, methods=["POST"])])),
+            Route("/messages", endpoint=handle_messages, methods=["POST"]),
             Route("/health", endpoint=healthcheck)
         ],
     )
