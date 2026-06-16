@@ -4,14 +4,12 @@ set -Eeuo pipefail
 
 # ======================================================
 # NousResearch Hermes AI Agent Stack Setup for Proxmox VE
-# Production Grade v5.1 — 9.8/10
+# Production Grade v5.2 — Ultra Stable
 # ======================================================
 
 # ── Pinned Versions — update intentionally, not automatically ──
 HERMES_IMAGE="nousresearch/hermes-agent:latest"
 DOCKER_PROXY_IMAGE="tecnativa/docker-socket-proxy:0.3.0"
-# Pinned to last known-good commit (2025-02-19). Update only after testing.
-PROXMOX_MCP_REF="1452cdd5a2d8b456a82a13aeae26c60daff9d6ca"
 
 # ── Colors & Logging ─────────────────────────────────
 GREEN="\033[0;32m"
@@ -27,7 +25,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 log_step()  { echo -e "\n${BLUE}${BOLD}$*${NC}"; }
 
 echo -e "${BLUE}======================================================="
-echo -e "  NousResearch Hermes AI Agent Setup  v5.1 (Fixed)"
+echo -e "  NousResearch Hermes AI Agent Setup  v5.2 (Fixed)"
 echo -e "  Optimized for Proxmox VE (LXC with SSE MCPs)"
 echo -e "=======================================================${NC}"
 
@@ -191,7 +189,6 @@ until pct exec "$CTID" -- ping -c 1 -W 2 8.8.8.8 &>/dev/null; do sleep 2; done
 log_step "[3/6] Installing Docker & Compose..."
 pct exec "$CTID" -- bash -c "apt-get update -qq && apt-get install -y curl git python3 python3-pip ca-certificates gnupg netcat-openbsd -qq"
 pct exec "$CTID" -- bash -c "curl -fsSL https://get.docker.com | sh"
-# Ensure docker compose plugin is present
 if ! pct exec "$CTID" -- docker compose version &>/dev/null; then
   pct exec "$CTID" -- bash -c "apt-get install -y docker-compose-plugin"
 fi
@@ -219,34 +216,55 @@ PVE_HOST=$(hostname -I | awk '{print $1}')
 # [5/6] Deploy Hermes Stack
 # ══════════════════════════════════════════════════════
 log_step "[5/6] Deploying Hermes Stack..."
-pct exec "$CTID" -- bash -c "mkdir -p /opt/hermes/data/proxmox-config /opt/hermes/docker-mcp /opt/hermes/duckduckgo-mcp"
+pct exec "$CTID" -- bash -c "mkdir -p /opt/hermes/data/proxmox-config /opt/hermes/docker-mcp /opt/hermes/duckduckgo-mcp /opt/hermes/proxmox-mcp-stable"
 
-# Clone ProxmoxMCP
+# Create Stable Proxmox MCP
 pct exec "$CTID" -- bash -c "
-  if [ ! -d /opt/hermes/proxmox-mcp ]; then
-    git clone https://github.com/canvrno/ProxmoxMCP.git /opt/hermes/proxmox-mcp
-  fi
-  cd /opt/hermes/proxmox-mcp && git fetch --tags && git checkout $PROXMOX_MCP_REF
-"
+  cat <<EOF > /opt/hermes/proxmox-mcp-stable/server.py
+import os, json
+from fastmcp import FastMCP
+from proxmoxer import ProxmoxAPI
 
-# Create Proxmox Config & Dockerfile
-pct exec "$CTID" -- bash -c "
-  cat <<EOF > /opt/hermes/proxmox-mcp/proxmox-config/config.json
-{
-  \"proxmox\": { \"host\": \"${PVE_HOST}\", \"port\": 8006, \"verify_ssl\": false, \"service\": \"PVE\" },
-  \"auth\": { \"user\": \"hermes-agent@pve\", \"token_name\": \"hermes-token\", \"token_value\": \"${TOKEN_SECRET}\" },
-  \"logging\": { \"level\": \"INFO\", \"format\": \"%(asctime)s - %(name)s - %(levelname)s - %(message)s\", \"file\": \"proxmox_mcp.log\" }
-}
+mcp = FastMCP(\"Proxmox\")
+pve = None
+
+def get_pve():
+    global pve
+    if pve is None:
+        pve = ProxmoxAPI(
+            os.environ[\"PVE_HOST\"],
+            user=os.environ[\"PVE_USER\"],
+            token_name=os.environ[\"PVE_TOKEN_NAME\"],
+            token_value=os.environ[\"PVE_TOKEN_VALUE\"],
+            verify_ssl=False
+        )
+    return pve
+
+@mcp.tool()
+def list_containers():
+    \"\"\"List all LXC containers on the Proxmox host\"\"\"
+    return get_pve().nodes(\"pve\").lxc.get()
+
+@mcp.tool()
+def start_container(vmid: int):
+    \"\"\"Start a specific LXC container\"\"\"
+    return get_pve().nodes(\"pve\").lxc(vmid).status.start.post()
+
+@mcp.tool()
+def stop_container(vmid: int):
+    \"\"\"Stop a specific LXC container\"\"\"
+    return get_pve().nodes(\"pve\").lxc(vmid).status.stop.post()
+
+if __name__ == \"__main__\":
+    mcp.run(transport=\"sse\", host=\"0.0.0.0\", port=8380)
 EOF
-  cat <<EOF > /opt/hermes/proxmox-mcp/Dockerfile
+  cat <<EOF > /opt/hermes/proxmox-mcp-stable/Dockerfile
 FROM python:3.12-slim
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir proxmoxer requests fastmcp[server]
 WORKDIR /app
-COPY . .
-RUN pip install --no-cache-dir --upgrade mcp proxmoxer requests pydantic
-RUN pip install --no-cache-dir .
+COPY server.py .
 EXPOSE 8380
-CMD ["python", "-m", "proxmox_mcp.server", "--transport", "sse", "--host", "0.0.0.0", "--port", "8380"]
+CMD [\"python\", \"server.py\"]
 EOF
 "
 
@@ -292,24 +310,18 @@ CMD [\"python\", \"-c\", \"import sys; from duckduckgo_mcp_server.server import 
 EOF
 "
 
-# Hermes config.yaml (Final Stable Version: Model + 3 MCPs)
+# Hermes config.yaml
 cat <<'YAML_EOF' | pct exec "$CTID" -- tee /opt/hermes/data/config.yaml >/dev/null
 model: "openrouter/owl-alpha"
+max_concurrent_sessions: {}
 mcp_servers:
   proxmox:
-    command: "npx"
-    args: ["-y", "mcp-proxmoxer"]
-    env:
-      PVE_URL: "https://${PVE_HOST}:8006"
-      PVE_TOKEN_ID: "hermes-agent@pve!hermes-token"
-      PVE_TOKEN_SECRET: "${TOKEN_SECRET}"
-      PVE_VERIFY_SSL: "false"
+    transport: sse
+    url: http://proxmox-mcp:8380/sse
   docker:
-    description: Docker Container Management
     transport: sse
     url: http://docker-mcp:8000/sse
   duckduckgo:
-    description: Web Search
     transport: sse
     url: http://duckduckgo-mcp:8000/sse
 YAML_EOF
@@ -330,19 +342,15 @@ printf '%b\n' "$ENV_CONTENT" | pct exec "$CTID" -- tee /opt/hermes/.env >/dev/nu
 cat <<'COMPOSE_EOF' | pct exec "$CTID" -- tee /opt/hermes/docker-compose.yml >/dev/null
 services:
   docker-proxy:
-    image: ${DOCKER_PROXY_IMAGE}
+    image: tecnativa/docker-socket-proxy:0.3.0
     restart: unless-stopped
     volumes: [ /var/run/docker.sock:/var/run/docker.sock:ro ]
     environment: [ CONTAINERS=1, IMAGES=1, NETWORKS=1, VOLUMES=1, EVENTS=1, EXEC=1, POST=1 ]
     networks: [ hermes-net ]
-    labels:
-      - "autoexposer.enable=false"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:2375/version >/dev/null 2>&1 || exit 1"]
-      interval: 15s
+    labels: [ "autoexposer.enable=false" ]
 
   hermes:
-    image: ${HERMES_IMAGE}
+    image: nousresearch/hermes-agent:latest
     container_name: hermes
     restart: unless-stopped
     tty: true
@@ -357,18 +365,19 @@ services:
       - "autoexposer.group=AI & Agents"
       - "autoexposer.icon=https://agentlocker.ai/static/uploads/ac3292ea-f056-4667-a3a8-f3c5e1467242_hermes.webp"
       - "autoexposer.port=9119"
-      - "autoexposer.subdomain=hermes"    depends_on:
-      docker-proxy: { condition: service_healthy }
-      proxmox-mcp: { condition: service_started }
+      - "autoexposer.subdomain=hermes"
+    depends_on: [ docker-proxy, proxmox-mcp ]
     networks: [ hermes-net ]
 
   proxmox-mcp:
-    build: ./proxmox-mcp
+    build: ./proxmox-mcp-stable
     container_name: proxmox-mcp
     restart: unless-stopped
-    ports: [ "8380:8380" ]
-    volumes: [ ./proxmox-mcp/proxmox-config:/app/proxmox-config ]
-    environment: [ PROXMOX_MCP_CONFIG=proxmox-config/config.json ]
+    environment:
+      PVE_HOST: "${PVE_HOST}"
+      PVE_USER: "hermes-agent@pve"
+      PVE_TOKEN_NAME: "hermes-token"
+      PVE_TOKEN_VALUE: "${TOKEN_SECRET}"
     labels: [ "autoexposer.enable=false" ]
     networks: [ hermes-net ]
 
