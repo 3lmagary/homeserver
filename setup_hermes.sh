@@ -472,7 +472,8 @@ PROXMOX_TOKEN_SECRET=${TOKEN_SECRET}
 PROXMOX_VERIFY_SSL=${VERIFY_SSL}
 TELEGRAM_BOT_TOKEN=${TG_TOKEN}
 TELEGRAM_ALLOWED_USERS=${TG_UID}
-HERMES_DASHBOARD=true"
+HERMES_DASHBOARD=true
+HERMES_DASHBOARD_INSECURE=true"
 
 [ -n "$OPENROUTER_KEY" ] && ENV_CONTENT="${ENV_CONTENT}
 OPENROUTER_API_KEY=${OPENROUTER_KEY}"
@@ -521,7 +522,6 @@ services:
     image: ${HERMES_IMAGE}
     container_name: hermes
     restart: unless-stopped
-    command: ["--insecure"]
     tty: true
     stdin_open: true
     env_file: .env
