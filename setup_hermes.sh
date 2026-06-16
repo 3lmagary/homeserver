@@ -381,14 +381,13 @@ try:
     # FastMCP clients expect the endpoint URL to be exactly the same as returned by the endpoint event
     sse = SseServerTransport("/messages")
 
-    async def handle_sse(request):
-        async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
+    async def handle_sse(scope, receive, send):
+        async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
             await mcp_server.run(read_stream, write_stream, mcp_server.create_initialization_options())
-        return Response()
 
-    async def handle_messages(request):
-        await sse.handle_post_message(request.scope, request.receive, request._send)
-        return Response()
+    async def sse_endpoint(request):
+        # Convert the Starlette request to ASGI parameters and return the awaited response natively
+        return await handle_sse(request.scope, request.receive, request._send)
 
     async def healthcheck(request):
         return JSONResponse({"status": "ok"})
@@ -396,10 +395,8 @@ try:
     app = Starlette(
         debug=True,
         routes=[
-            Route("/sse", endpoint=handle_sse, methods=["GET"]),
-            Route("/sse", endpoint=handle_messages, methods=["POST"]),
-            Route("/messages", endpoint=handle_messages, methods=["POST"]),
-            Route("/messages/", endpoint=handle_messages, methods=["POST"]),
+            Route("/sse", endpoint=sse_endpoint, methods=["GET", "POST"]), # Accept POST fallback just in case
+            Mount("/messages", app=sse.handle_post_message),
             Route("/health", endpoint=healthcheck)
         ],
     )
