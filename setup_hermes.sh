@@ -329,7 +329,7 @@ printf '%b\n' "$ENV_CONTENT" | pct exec "$CTID" -- tee /opt/hermes/.env >/dev/nu
 cat <<'COMPOSE_EOF' | pct exec "$CTID" -- tee /opt/hermes/docker-compose.yml >/dev/null
 services:
   docker-proxy:
-    image: tecnativa/docker-socket-proxy:0.3.0
+    image: ${DOCKER_PROXY_IMAGE}
     restart: unless-stopped
     volumes: [ /var/run/docker.sock:/var/run/docker.sock:ro ]
     environment: [ CONTAINERS=1, IMAGES=1, NETWORKS=1, VOLUMES=1, EVENTS=1, EXEC=1, POST=1 ]
@@ -341,7 +341,7 @@ services:
       interval: 15s
 
   hermes:
-    image: nousresearch/hermes-agent:latest
+    image: ${HERMES_IMAGE}
     container_name: hermes
     restart: unless-stopped
     tty: true
@@ -354,7 +354,7 @@ services:
       - "autoexposer.enable=true"
       - "autoexposer.name=Hermes"
       - "autoexposer.group=AI & Agents"
-      - "autoexposer.icon=terminal"
+      - "autoexposer.icon=https://raw.githubusercontent.com/3lmagary/homeserver/main/Graphics/hermes.png"
       - "autoexposer.port=9119"
       - "autoexposer.subdomain=hermes"
     depends_on:
