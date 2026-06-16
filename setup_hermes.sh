@@ -378,6 +378,7 @@ try:
     pve_server = ProxmoxMCPServer(config_path)
     mcp_server = pve_server.mcp._mcp_server
     
+    # FastMCP clients expect the endpoint URL to be exactly the same as returned by the endpoint event
     sse = SseServerTransport("/messages")
 
     async def handle_sse(request):
@@ -397,6 +398,7 @@ try:
         routes=[
             Route("/sse", endpoint=handle_sse),
             Route("/messages", endpoint=handle_messages, methods=["POST"]),
+            Route("/messages/", endpoint=handle_messages, methods=["POST"]),
             Route("/health", endpoint=healthcheck)
         ],
     )
