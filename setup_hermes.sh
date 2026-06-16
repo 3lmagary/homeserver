@@ -8,7 +8,7 @@ set -Eeuo pipefail
 # ======================================================
 
 # ── Pinned Versions — update intentionally, not automatically ──
-HERMES_IMAGE="nousresearch/hermes-agent:v0.9.0"
+HERMES_IMAGE="nousresearch/hermes-agent:latest"
 DOCKER_PROXY_IMAGE="tecnativa/docker-socket-proxy:0.3.0"
 # Pinned to last known-good commit (2025-02-19). Update only after testing.
 PROXMOX_MCP_REF="1452cdd5a2d8b456a82a13aeae26c60daff9d6ca"
