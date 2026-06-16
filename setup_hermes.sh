@@ -372,7 +372,7 @@ from proxmox_mcp.server import ProxmoxMCPServer
 pve_server = ProxmoxMCPServer()
 mcp = pve_server.mcp
 
-sse = SseServerTransport("/messages")
+sse = SseServerTransport(\"/messages\")
 
 async def handle_sse(request):
     async with sse.connect_sse(request.scope, request.receive, request.send) as (read_stream, write_stream):
