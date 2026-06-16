@@ -351,7 +351,7 @@ services:
       - "autoexposer.name=Hermes"
       - "autoexposer.group=AI & Agents"
       - "autoexposer.icon=terminal"
-      - "autoexposer.port=8642"
+      - "autoexposer.port=9119"
       - "autoexposer.subdomain=hermes"
     depends_on:
       docker-proxy: { condition: service_healthy }
