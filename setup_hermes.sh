@@ -387,10 +387,12 @@ cat <<'EOF' > /tmp/hermes_dockerfile
 FROM python:3.11-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y git netcat-openbsd gcc python3-dev && rm -rf /var/lib/apt/lists/*
-COPY . .
-# Install the official MCP SDK from git as required by the project
+RUN pip install --no-cache-dir --upgrade pip
+# Install FastMCP and official SDK with extras explicitly
+RUN pip install --no-cache-dir fastmcp starlette sse-starlette uvicorn anyio python-dotenv
 RUN pip install --no-cache-dir "mcp[fastmcp] @ git+https://github.com/modelcontextprotocol/python-sdk.git"
-RUN pip install --no-cache-dir . uvicorn starlette sse-starlette anyio
+COPY . .
+RUN pip install --no-cache-dir .
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "sse_wrapper.py"]
