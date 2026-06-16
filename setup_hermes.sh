@@ -292,13 +292,17 @@ CMD [\"python\", \"-c\", \"import sys; from duckduckgo_mcp_server.server import 
 EOF
 "
 
-# Hermes config.yaml (SSE mode)
+# Hermes config.yaml (Stable Node.js Proxmox MCP + SSE for others)
 cat <<'YAML_EOF' | pct exec "$CTID" -- tee /opt/hermes/data/config.yaml >/dev/null
 mcp_servers:
   proxmox:
-    description: Proxmox VE Server Management
-    transport: sse
-    url: http://proxmox-mcp:8380/sse
+    command: "npx"
+    args: ["-y", "@canvrno/proxmox-mcp"]
+    env:
+      PROXMOX_URL: "https://${PVE_HOST}:8006"
+      PROXMOX_TOKEN_ID: "hermes-agent@pve!hermes-token"
+      PROXMOX_TOKEN_SECRET: "${TOKEN_SECRET}"
+      PROXMOX_VERIFY_SSL: "false"
   docker:
     description: Docker Container Management
     transport: sse
