@@ -396,7 +396,8 @@ try:
     app = Starlette(
         debug=True,
         routes=[
-            Route("/sse", endpoint=handle_sse),
+            Route("/sse", endpoint=handle_sse, methods=["GET"]),
+            Route("/sse", endpoint=handle_messages, methods=["POST"]),
             Route("/messages", endpoint=handle_messages, methods=["POST"]),
             Route("/messages/", endpoint=handle_messages, methods=["POST"]),
             Route("/health", endpoint=healthcheck)
