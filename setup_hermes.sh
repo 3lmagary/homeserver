@@ -237,6 +237,7 @@ def get_pve():
             token_name=os.environ[\"PVE_TOKEN_NAME\"],
             token_value=os.environ[\"PVE_TOKEN_VALUE\"],
             verify_ssl=False
+            timeout=30
         )
     return pve
 
