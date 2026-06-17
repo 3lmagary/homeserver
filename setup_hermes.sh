@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 # ======================================================
 # NousResearch Hermes AI Agent Stack Setup for Proxmox VE
-# Production Grade v5.2 — Ultra Stable
+# Production Grade v5.3 — Ultra Stable
 # ======================================================
 
 # ── Pinned Versions — update intentionally, not automatically ──
@@ -25,7 +25,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 log_step()  { echo -e "\n${BLUE}${BOLD}$*${NC}"; }
 
 echo -e "${BLUE}======================================================="
-echo -e "  NousResearch Hermes AI Agent Setup  v5.2 (Fixed)"
+echo -e "  NousResearch Hermes AI Agent Setup  v5.3 (Fixed)"
 echo -e "  Optimized for Proxmox VE (LXC with SSE MCPs)"
 echo -e "=======================================================${NC}"
 
