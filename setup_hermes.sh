@@ -923,8 +923,8 @@ pct exec "$CTID" -- bash -c "cd /opt/hermes && docker compose up -d --build --pu
 # AutoExposer Integration
 CF_DOMAIN=""
 [ -f "/opt/homeserver/auto_exposer/.env" ] && CF_DOMAIN=$(grep -E "^CF_DOMAIN=" /opt/homeserver/auto_exposer/.env | cut -d= -f2- | tr -d '"'"'"' ' || true)
-if [ -n "$CF_DOMAIN" ]; then
-  log_info "Triggering AutoExposer..."
+  if [ -n "$CF_DOMAIN" ]; then
+    log_info "Triggering AutoExposer..."
   (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync)
 fi
 
