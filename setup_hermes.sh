@@ -134,7 +134,7 @@ check_ip_conflict() {
 }
 
 if $UPDATE_MODE; then
-  SAVED_IP=$(grep -o -E "ip=[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" "/etc/pve/lxc/${CTID}.conf" 2>/dev/null | cut -d= -f2 || true)
+  SAVED_IP=$(grep -o -E "ip=[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" "/etc/pve/lxc/${CTID}.conf" 2>/dev/null | cut -d= -f2 | head -n 1 || true)
   if [ -n "$SAVED_IP" ]; then
     STATIC_IP="$SAVED_IP"
     log_info "Using existing container IP: $STATIC_IP"
@@ -180,10 +180,10 @@ if $UPDATE_MODE; then
 
   EXISTING_ENV=$(pct exec "$CTID" -- cat /opt/hermes/.env 2>/dev/null || true)
   if [ -n "$EXISTING_ENV" ]; then
-    SAVED_TG_TOKEN=$(echo "$EXISTING_ENV" | grep "^TELEGRAM_BOT_TOKEN=" | cut -d= -f2-)
-    SAVED_TG_UID=$(echo "$EXISTING_ENV" | grep "^TELEGRAM_ALLOWED_USERS=" | cut -d= -f2-)
-    SAVED_OPENROUTER_KEY=$(echo "$EXISTING_ENV" | grep "^OPENROUTER_API_KEY=" | cut -d= -f2-)
-    SAVED_PVE_TOKEN_VALUE=$(echo "$EXISTING_ENV" | grep "^PVE_TOKEN_VALUE=" | cut -d= -f2-)
+    SAVED_TG_TOKEN=$(echo "$EXISTING_ENV" | grep "^TELEGRAM_BOT_TOKEN=" | cut -d= -f2- || true)
+    SAVED_TG_UID=$(echo "$EXISTING_ENV" | grep "^TELEGRAM_ALLOWED_USERS=" | cut -d= -f2- || true)
+    SAVED_OPENROUTER_KEY=$(echo "$EXISTING_ENV" | grep "^OPENROUTER_API_KEY=" | cut -d= -f2- || true)
+    SAVED_PVE_TOKEN_VALUE=$(echo "$EXISTING_ENV" | grep "^PVE_TOKEN_VALUE=" | cut -d= -f2- || true)
     log_info "Found saved credentials from previous installation."
   fi
 fi
@@ -857,7 +857,7 @@ pct exec "$CTID" -- bash -c "cd /opt/hermes && docker compose up -d --build --pu
 
 # AutoExposer Integration
 CF_DOMAIN=""
-[ -f "/opt/homeserver/auto_exposer/.env" ] && CF_DOMAIN=$(grep -E "^CF_DOMAIN=" /opt/homeserver/auto_exposer/.env | cut -d= -f2- | tr -d '"'"'"' ')
+[ -f "/opt/homeserver/auto_exposer/.env" ] && CF_DOMAIN=$(grep -E "^CF_DOMAIN=" /opt/homeserver/auto_exposer/.env | cut -d= -f2- | tr -d '"'"'"' ' || true)
 if [ -n "$CF_DOMAIN" ]; then
   log_info "Triggering AutoExposer..."
   (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync)
