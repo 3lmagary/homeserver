@@ -313,7 +313,7 @@ EOF
 # Hermes config.yaml
 cat <<'YAML_EOF' | pct exec "$CTID" -- tee /opt/hermes/data/config.yaml >/dev/null
 model: "openrouter/owl-alpha"
-max_concurrent_sessions: {}
+max_concurrent_sessions: 10
 mcp_servers:
   proxmox:
     transport: sse
