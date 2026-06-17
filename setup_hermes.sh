@@ -52,7 +52,7 @@ cleanup_on_error() {
   [ $exit_code -eq 0 ] && return
   echo ""
   log_error "Setup failed at some point (exit $exit_code)."
-  read -r -p "Do you want to ROLLBACK and delete everything created so far? [y/N]: " CONFIRM_ROLLBACK || true
+  read -r -p "Do you want to ROLLBACK and delete everything created so far? [y/N]: " CONFIRM_ROLLBACK < /dev/tty || true
   if [[ ! "${CONFIRM_ROLLBACK,,}" == "y" ]]; then
     log_info "Keeping resources as-is."
     trap - EXIT
@@ -144,15 +144,14 @@ else
     EXISTING_CT_FILE=$(grep -l "ip=$STATIC_IP" /etc/pve/lxc/*.conf 2>/dev/null | head -n 1 || true)
     if [ -n "$EXISTING_CT_FILE" ]; then
       EXISTING_IP_CTID=$(basename "$EXISTING_CT_FILE" .conf)
-      log_warn "IP $STATIC_IP is already assigned to Container $EXISTING_IP_CTID."
-      read -r -p "Do you want to REUSE Container $EXISTING_IP_CTID and its settings? [Y/n]: " REUSE_EXISTING || true
+      read -r -p "Do you want to REUSE Container $EXISTING_IP_CTID and its settings? [Y/n]: " REUSE_EXISTING < /dev/tty || true
       if [[ ! "${REUSE_EXISTING,,}" == "n" ]]; then
         CTID="$EXISTING_IP_CTID"
         UPDATE_MODE=true
       else
         log_warn "Enter a different IP:"
         while true; do
-          read -r -p "  Static IP [$STATIC_IP]: " ALT_IP || true
+          read -r -p "  Static IP [$STATIC_IP]: " ALT_IP < /dev/tty || true
           ALT_IP=${ALT_IP:-$STATIC_IP}
           validate_ip "$ALT_IP" && ! check_ip_conflict "$ALT_IP" && { STATIC_IP="$ALT_IP"; break; }
           log_warn "Invalid or in-use IP. Try again."
@@ -191,7 +190,7 @@ fi
 echo -e "  Container ID  : ${BOLD}$CTID${NC}"
 echo -e "  Container IP  : ${BOLD}$STATIC_IP${NC}"
 echo -e "  Mode          : ${BOLD}$($UPDATE_MODE && echo 'UPDATE (incremental)' || echo 'FRESH INSTALL')${NC}"
-read -r -p "Proceed? [Y/n]: " CONFIRM || true
+read -r -p "Proceed? [Y/n]: " CONFIRM < /dev/tty || true
 [[ "${CONFIRM,,}" == "n" ]] && { log_error "Aborted."; exit 1; }
 
 # ── Credentials (reuse saved or ask) ──────────────────
@@ -199,7 +198,7 @@ if [ -n "$SAVED_TG_TOKEN" ]; then
   log_info "Using saved Telegram Bot Token."
   TG_TOKEN="$SAVED_TG_TOKEN"
 else
-  read -r -p "Telegram Bot Token: " TG_TOKEN || true
+  read -r -p "Telegram Bot Token: " TG_TOKEN < /dev/tty || true
   [ -z "$TG_TOKEN" ] && { log_error "Token required!"; exit 1; }
 fi
 
@@ -207,7 +206,7 @@ if [ -n "$SAVED_TG_UID" ]; then
   log_info "Using saved Telegram User ID."
   TG_UID="$SAVED_TG_UID"
 else
-  read -r -p "Telegram User ID: " TG_UID || true
+  read -r -p "Telegram User ID: " TG_UID < /dev/tty || true
   [ -z "$TG_UID" ] && { log_error "User ID required!"; exit 1; }
 fi
 
@@ -215,7 +214,7 @@ if [ -n "$SAVED_OPENROUTER_KEY" ]; then
   log_info "Using saved OpenRouter API Key."
   OPENROUTER_KEY="$SAVED_OPENROUTER_KEY"
 else
-  read -r -p "OpenRouter API Key: " OPENROUTER_KEY || true
+  read -r -p "OpenRouter API Key: " OPENROUTER_KEY < /dev/tty || true
 fi
 
 # ══════════════════════════════════════════════════════
