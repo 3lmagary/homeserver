@@ -271,7 +271,7 @@ fi
 # ══════════════════════════════════════════════════════
 log_step "[4/6] Setting up Proxmox API Token..."
 
-PRIVS="VM.Audit,VM.PowerMgmt,VM.Console,VM.Allocate,VM.Config.Options,VM.Config.Network,VM.Config.Disk,VM.Config.Memory,Datastore.Audit,Datastore.AllocateSpace,Sys.Audit"
+PRIVS="VM.Audit,VM.PowerMgmt,VM.Console,VM.Allocate,VM.Config.Options,VM.Config.Network,VM.Config.Disk,VM.Config.Memory,Datastore.Audit,Datastore.AllocateSpace,Sys.Audit,SDN.Use"
 
 # Always ensure role and user exist with correct privileges
 pveum role add "HermesMinimal" -privs "$PRIVS" 2>/dev/null || pveum role modify "HermesMinimal" -privs "$PRIVS"
