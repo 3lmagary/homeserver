@@ -865,9 +865,12 @@ fi
 
 trap - EXIT
 echo ""
+DASHBOARD_URL="http://$STATIC_IP:9119"
+[ -n "$CF_DOMAIN" ] && DASHBOARD_URL="https://hermes.$CF_DOMAIN"
+
 log_info "============================================"
 log_info "  Setup complete!"
 log_info "  Container IP : $STATIC_IP"
-log_info "  Dashboard    : http://$STATIC_IP:9119"
+log_info "  Dashboard    : $DASHBOARD_URL"
 log_info "  Mode         : $($UPDATE_MODE && echo 'UPDATE (incremental)' || echo 'FRESH INSTALL')"
 log_info "============================================"
