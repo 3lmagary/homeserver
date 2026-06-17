@@ -695,16 +695,19 @@ EXPOSE 8000
 CMD ["python", "-c", "import sys; from duckduckgo_mcp_server.server import mcp, main; mcp.settings.transport_security.enable_dns_rebinding_protection = False; sys.argv = ['duckduckgo-mcp-server', '--transport', 'sse', '--host', '0.0.0.0', '--port', '8000']; main()"]
 DF_EOF
 
-# ── Hermes config.yaml (Fixed: removed unnecessary transport key) ──
+# ── Hermes config.yaml ──
 cat <<'YAML_EOF' | pct exec "$CTID" -- tee /opt/hermes/data/config.yaml > /dev/null
 model: "openrouter/owl-alpha"
 max_concurrent_sessions: 10
 mcp_servers:
   proxmox:
+    transport: "sse"
     url: http://proxmox-mcp:8380/sse
   docker:
+    transport: "sse"
     url: http://docker-mcp:8000/sse
   duckduckgo:
+    transport: "sse"
     url: http://duckduckgo-mcp:8000/sse
 YAML_EOF
 
