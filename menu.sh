@@ -41,16 +41,14 @@ SCRIPT_TITLES["setup_dashboard.sh"]="AutoExposer DNS/SSL/Homepage Sync (Python)"
 SCRIPT_TITLES["adguard_unbound.sh"]="AdGuard Home + Unbound DNS Setup"
 SCRIPT_TITLES["setup_hermes.sh"]="Hermes AI Agent Stack (Autonomous AI Agent & Dashboard)"
 
-declare -A SCRIPT_UPDATED
+HERMES_UPDATED=false
 
-refresh_update_state() {
+refresh_hermes_update_state() {
     git fetch origin main -q
-    declare -gA SCRIPT_UPDATED=()
-    for script in "${SCRIPT_FILES[@]}"; do
-        if [ -f "$script" ] && ! git diff --quiet HEAD.."$REMOTE_BRANCH" -- "$script"; then
-            SCRIPT_UPDATED["$script"]=1
-        fi
-    done
+    HERMES_UPDATED=false
+    if [ -f "setup_hermes.sh" ] && ! git diff --quiet HEAD.."$REMOTE_BRANCH" -- "setup_hermes.sh"; then
+        HERMES_UPDATED=true
+    fi
 }
 
 show_update_summary() {
@@ -70,20 +68,20 @@ confirm_repo_update() {
         return 1
     fi
 
-    if ! git diff --quiet || ! git diff --cached --quiet; then
-        echo -e "${YELLOW}Warning: local changes will be replaced by the repository version.${NC}"
+    if ! git diff --quiet -- "setup_hermes.sh" || ! git diff --cached --quiet -- "setup_hermes.sh"; then
+        echo -e "${YELLOW}Warning: local changes in setup_hermes.sh will be replaced by the repository version.${NC}"
         read -r -p "Continue anyway? [y/N]: " FORCE_UPDATE < /dev/tty || true
         if [[ ! "${FORCE_UPDATE,,}" == "y" ]]; then
             return 1
         fi
     fi
 
-    git reset --hard "$REMOTE_BRANCH" -q
-    git clean -fd -q
+    git fetch origin main -q
+    git checkout "$REMOTE_BRANCH" -- "setup_hermes.sh"
     return 0
 }
 
-refresh_update_state
+refresh_hermes_update_state
 
 # Dynamically scan for available scripts
 AVAILABLE_SCRIPTS=()
@@ -120,7 +118,7 @@ trap show_cursor EXIT INT TERM
 options=()
 for script in "${AVAILABLE_SCRIPTS[@]}"; do
     title="${SCRIPT_TITLES[$script]:-$script}"
-    if [ -n "${SCRIPT_UPDATED[$script]:-}" ]; then
+    if [ "$script" = "setup_hermes.sh" ] && $HERMES_UPDATED; then
         title="${title} ${YELLOW}[update available]${NC}"
     fi
     options+=("$title (${BLUE}$script${NC})")
@@ -217,7 +215,7 @@ while true; do
     SELECTED_SCRIPT="${AVAILABLE_SCRIPTS[$selected]}"
     SELECTED_TITLE="${SCRIPT_TITLES[$SELECTED_SCRIPT]:-$SELECTED_SCRIPT}"
 
-    if [ -n "${SCRIPT_UPDATED[$SELECTED_SCRIPT]:-}" ]; then
+    if [ "$SELECTED_SCRIPT" = "setup_hermes.sh" ] && $HERMES_UPDATED; then
         show_update_summary "$SELECTED_SCRIPT"
         if ! confirm_repo_update; then
             echo -e "\n${YELLOW}Skipped update. Returning to menu...${NC}"
@@ -225,17 +223,11 @@ while true; do
             continue
         fi
         echo -e "\n${GREEN}Repository updated. Refreshing menu state...${NC}"
-        refresh_update_state
-        AVAILABLE_SCRIPTS=()
-        for key in "${SCRIPT_FILES[@]}"; do
-            if [ -f "$key" ]; then
-                AVAILABLE_SCRIPTS+=("$key")
-            fi
-        done
+        refresh_hermes_update_state
         options=()
         for script in "${AVAILABLE_SCRIPTS[@]}"; do
             title="${SCRIPT_TITLES[$script]:-$script}"
-            if [ -n "${SCRIPT_UPDATED[$script]:-}" ]; then
+            if [ "$script" = "setup_hermes.sh" ] && $HERMES_UPDATED; then
                 title="${title} ${YELLOW}[update available]${NC}"
             fi
             options+=("$title (${BLUE}$script${NC})")
