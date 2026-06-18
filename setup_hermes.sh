@@ -10,6 +10,7 @@ set -Eeuo pipefail
 # ── Pinned Versions — update intentionally, not automatically ──
 HERMES_IMAGE="nousresearch/hermes-agent:latest"
 DOCKER_PROXY_IMAGE="tecnativa/docker-socket-proxy:0.3.0"
+SCRIPT_VERSION="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 
 # ── Colors & Logging ─────────────────────────────────
 GREEN="\033[0;32m"
@@ -28,6 +29,7 @@ echo -e "${BLUE}======================================================="
 echo -e "  NousResearch Hermes AI Agent Setup  v6.0"
 echo -e "  Optimized for Proxmox VE (LXC with SSE MCPs)"
 echo -e "  Supports Incremental Updates"
+echo -e "  Setup version: ${SCRIPT_VERSION}"
 echo -e "=======================================================${NC}"
 
 # ── Pre-flight checks ─────────────────────────────────
@@ -311,6 +313,7 @@ fi
 # ══════════════════════════════════════════════════════
 log_step "[5/6] Deploying Hermes Stack..."
 pct exec "$CTID" -- bash -c "mkdir -p /opt/hermes/data/proxmox-config /opt/hermes/docker-mcp /opt/hermes/duckduckgo-mcp /opt/hermes/proxmox-mcp-stable"
+pct exec "$CTID" -- bash -c "mkdir -p /opt/hermes/data/meta"
 
 # ── Proxmox MCP Server (Fixed: syntax, dynamic node, more tools) ──
 cat <<'PY_EOF' | pct exec "$CTID" -- tee /opt/hermes/proxmox-mcp-stable/server.py > /dev/null
@@ -941,6 +944,8 @@ if __name__ == "__main__":
     mcp.run(transport="sse", host="0.0.0.0", port=8380)
 PY_EOF
 
+printf '%s\n' "$SCRIPT_VERSION" | pct exec "$CTID" -- tee /opt/hermes/proxmox-mcp-stable/VERSION > /dev/null
+
 cat <<'DF_EOF' | pct exec "$CTID" -- tee /opt/hermes/proxmox-mcp-stable/Dockerfile > /dev/null
 FROM python:3.12-slim
 RUN pip install --no-cache-dir proxmoxer requests fastmcp uvicorn starlette
@@ -985,6 +990,8 @@ starlette_app = Starlette(routes=[
 if __name__ == '__main__':
     uvicorn.run(starlette_app, host='0.0.0.0', port=8000)
 PY_EOF
+
+printf '%s\n' "$SCRIPT_VERSION" | pct exec "$CTID" -- tee /opt/hermes/docker-mcp/VERSION > /dev/null
 
 cat <<'DF_EOF' | pct exec "$CTID" -- tee /opt/hermes/docker-mcp/Dockerfile > /dev/null
 FROM python:3.12-slim
@@ -1031,7 +1038,8 @@ PROXMOX_VERIFY_SSL=false
 TELEGRAM_BOT_TOKEN=${TG_TOKEN}
 TELEGRAM_ALLOWED_USERS=${TG_UID}
 HERMES_DASHBOARD=true
-HERMES_DASHBOARD_INSECURE=true"
+HERMES_DASHBOARD_INSECURE=true
+HERMES_SETUP_VERSION=${SCRIPT_VERSION}"
 [ -n "$OPENROUTER_KEY" ] && ENV_CONTENT="${ENV_CONTENT}
 OPENROUTER_API_KEY=${OPENROUTER_KEY}"
 printf '%s\n' "$ENV_CONTENT" | pct exec "$CTID" -- tee /opt/hermes/.env > /dev/null
@@ -1135,6 +1143,10 @@ COMPOSE_EOF
 # ── Write SOUL.md ──
 cat <<'MD_EOF' | pct exec "$CTID" -- tee /opt/hermes/data/SOUL.md > /dev/null
 # Hermes Agent — Identity & Operational Guide
+
+Runtime tooling lives in `/opt/hermes/proxmox-mcp-stable/server.py` and `/opt/hermes/docker-mcp/server.py`.
+`SOUL.md` is guidance only; it does not define the tool implementation.
+Current setup version: `SCRIPT_VERSION_PLACEHOLDER`
 
 You are **Hermes Agent**, a specialized DevOps assistant for managing a Proxmox VE home server.
 You communicate in the same language the user uses (Arabic or English).
@@ -1262,6 +1274,21 @@ Wait for explicit approval: (CONFIRMED / YES / موافق / ماشي / تمام)
 → 7. Report result
 MD_EOF
 
+pct exec "$CTID" -- bash -c "sed -i 's/SCRIPT_VERSION_PLACEHOLDER/$SCRIPT_VERSION/g' /opt/hermes/data/SOUL.md"
+
+cat <<EOF | pct exec "$CTID" -- tee /opt/hermes/data/meta/install-manifest.json > /dev/null
+{
+  "setup_version": "$SCRIPT_VERSION",
+  "runtime_files": {
+    "proxmox_mcp_server": "/opt/hermes/proxmox-mcp-stable/server.py",
+    "docker_mcp_server": "/opt/hermes/docker-mcp/server.py",
+    "soul": "/opt/hermes/data/SOUL.md",
+    "compose": "/opt/hermes/docker-compose.yml",
+    "config": "/opt/hermes/data/config.yaml"
+  }
+}
+EOF
+
 pct exec "$CTID" -- bash -c "chown -R 10000:10000 /opt/hermes/data 2>/dev/null || true"
 pct exec "$CTID" -- bash -c "chmod -R u+rwX,g+rX /opt/hermes/data 2>/dev/null || true"
 
@@ -1287,9 +1314,22 @@ pct exec "$CTID" -- bash -c "cd /opt/hermes && docker compose up -d --build --pu
 
 # AutoExposer Integration
 CF_DOMAIN=""
-[ -f "/opt/homeserver/auto_exposer/.env" ] && CF_DOMAIN=$(grep -E "^CF_DOMAIN=" /opt/homeserver/auto_exposer/.env | cut -d= -f2- | tr -d '"'"'"' ' || true)
-  if [ -n "$CF_DOMAIN" ]; then
-    log_info "Triggering AutoExposer..."
+CF_ENV_FILE="/opt/homeserver/auto_exposer/.env"
+if [ -f "$CF_ENV_FILE" ]; then
+  CF_DOMAIN=$(awk -F= '
+    $1 == "CF_DOMAIN" {
+      v = $2
+      sub(/^[[:space:]]+/, "", v)
+      sub(/[[:space:]]+$/, "", v)
+      gsub(/^"/, "", v)
+      gsub(/"$/, "", v)
+      print v
+      exit
+    }
+  ' "$CF_ENV_FILE" 2>/dev/null || true)
+fi
+if [ -n "$CF_DOMAIN" ]; then
+  log_info "Triggering AutoExposer..."
   (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync)
 fi
 
@@ -1298,7 +1338,7 @@ echo ""
 if [ -n "$CF_DOMAIN" ]; then
   DASHBOARD_URL="https://hermes.$CF_DOMAIN"
 else
-  DASHBOARD_URL="https://hermes.<your-domain>"
+  DASHBOARD_URL="AutoExposer domain not found"
 fi
 
 log_info "============================================"
@@ -1307,3 +1347,4 @@ log_info "  Container IP : $STATIC_IP"
 log_info "  Dashboard    : $DASHBOARD_URL"
 log_info "  Mode         : $($UPDATE_MODE && echo 'UPDATE (incremental)' || echo 'FRESH INSTALL')"
 log_info "============================================"
+
