@@ -314,7 +314,9 @@ pct exec "$CTID" -- bash -c "mkdir -p /opt/hermes/data/proxmox-config /opt/herme
 
 # ── Proxmox MCP Server (Fixed: syntax, dynamic node, more tools) ──
 cat <<'PY_EOF' | pct exec "$CTID" -- tee /opt/hermes/proxmox-mcp-stable/server.py > /dev/null
-import os, json, traceback, time
+import os, re, json, traceback, time
+import shlex
+from datetime import datetime
 from fastmcp import FastMCP
 from proxmoxer import ProxmoxAPI
 
@@ -357,6 +359,145 @@ def get_default_storage(node: str) -> str:
     except Exception:
         pass
     return "local-lvm"
+
+# ─── Service Management Infrastructure ───────────────────────────────────────
+AUDIT_LOG_PATH = "/opt/data/audit.log"
+
+def _audit(vmid: int, action: str, details: str) -> None:
+    """Append a maintenance event to the Hermes audit log."""
+    entry = {
+        "timestamp": datetime.now().isoformat(),
+        "agent": "Hermes",
+        "vmid": vmid,
+        "action": action,
+        "details": details,
+    }
+    try:
+        with open(AUDIT_LOG_PATH, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass  # Audit failure must not interrupt the operation
+
+def _validate_name(name: str, label: str = "name") -> None:
+    """Reject names containing characters unsafe for shell execution."""
+    if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_\-\.]*$", name):
+        raise ValueError(
+            f"Invalid {label} '{name}'. "
+            "Only alphanumeric, hyphens, underscores, and dots are allowed."
+        )
+
+def _assert_lxc(vmid: int) -> None:
+    """Raise ValueError if vmid is not a running LXC container."""
+    resources = get_pve().cluster.resources.get(type="vm")
+    resource = next((r for r in resources if r.get("vmid") == vmid), None)
+    if not resource:
+        raise ValueError(f"VMID {vmid} not found in the cluster.")
+    rtype = resource.get("type", "unknown")
+    if rtype != "lxc":
+        raise ValueError(
+            f"VMID {vmid} is a '{rtype}', not an LXC container. "
+            "Service management tools only operate on LXC containers."
+        )
+    if resource.get("status") != "running":
+        raise ValueError(
+            f"LXC {vmid} is not running (status: {resource.get('status', 'unknown')}). "
+            "Start the container first with start_container()."
+        )
+
+def _exec_lxc(vmid: int, command: str, timeout: int = 30) -> str:
+    """Run a bash command inside a running LXC via Proxmox API exec.
+    Captures stdout/stderr from the Proxmox task log.
+    Requires VM.Console permission (already granted to hermes-agent@pve).
+    NOTE: pct is not available inside Docker/LXC; Proxmox API exec is the
+    correct mechanism when the MCP server runs inside Hermes LXC.
+    """
+    node = get_node()
+    try:
+        upid = get_pve().nodes(node).lxc(vmid).exec.post(
+            command=["bash", "-c", command]
+        )
+    except Exception as e:
+        raise RuntimeError(f"Proxmox exec failed for VMID {vmid}: {e}")
+    # while...else: the else clause fires only when the loop exhausts without break
+    timed_out = False
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            st = get_pve().nodes(node).tasks(upid).status.get()
+            if st.get("status") == "stopped":
+                break
+        except Exception:
+            pass
+        time.sleep(1)
+    else:
+        # Timeout reached: try to cancel the Proxmox task to free resources
+        timed_out = True
+        try:
+            get_pve().nodes(node).tasks(upid).delete()
+        except Exception:
+            pass
+    # Read captured output from the Proxmox task log
+    try:
+        entries = get_pve().nodes(node).tasks(upid).log.get(limit=1000)
+        output = "\n".join(e.get("t", "") for e in entries if isinstance(e, dict))
+        if timed_out:
+            output += f"\n[WARNING: Command exceeded {timeout}s timeout — task cancelled]"
+        return output
+    except Exception as e:
+        return f"(output unavailable: {e})"
+
+# Allowlist: safe, read-only inspection commands
+_INSPECT_CMDS = {
+    "docker_ps":       "docker ps 2>/dev/null || echo 'Docker not available'",
+    "docker_ps_all":   "docker ps -a 2>/dev/null || echo 'Docker not available'",
+    "docker_compose":  "docker compose ls 2>/dev/null || echo 'No compose projects or Docker unavailable'",
+    "systemd_running": "systemctl list-units --type=service --state=running --no-pager --no-legend 2>/dev/null || echo 'systemd not available'",
+    "systemd_failed":  "systemctl --failed --no-pager --no-legend 2>/dev/null || echo 'None'",
+    "disk":            "df -h 2>/dev/null",
+    "memory":          "free -h 2>/dev/null",
+    "network":         "ss -tulnp 2>/dev/null",
+    "errors":          "journalctl -p err -n 50 --no-pager --no-hostname 2>/dev/null || echo 'Journal not available'",
+    "processes":       "ps aux --sort=-%cpu 2>/dev/null | head -20",
+    "uptime":          "uptime 2>/dev/null",
+}
+
+# Full diagnostic: numbered sections, command-v guards per tool availability
+_DIAG_SCRIPT = (
+    "echo '=== [1/6] RESOURCES ==='; "
+    "free -h 2>/dev/null || echo 'ERROR: free unavailable'; echo; "
+    "df -h 2>/dev/null || echo 'ERROR: df unavailable'; echo; "
+    "uptime 2>/dev/null || echo 'ERROR: uptime unavailable'; "
+    "echo '=== [2/6] DOCKER SERVICES ==='; "
+    "if command -v docker >/dev/null 2>&1; then "
+    "docker ps -a 2>/dev/null || echo 'ERROR: Docker daemon not running'; "
+    "else echo 'Docker not installed'; fi; "
+    "echo '=== [3/6] COMPOSE PROJECTS ==='; "
+    "if command -v docker >/dev/null 2>&1; then "
+    "docker compose ls 2>/dev/null || echo 'ERROR: Compose plugin not available'; "
+    "else echo 'Docker not installed'; fi; "
+    "echo '=== [4/6] SYSTEMD RUNNING ==='; "
+    "if command -v systemctl >/dev/null 2>&1; then "
+    "systemctl list-units --type=service --state=running --no-pager --no-legend 2>/dev/null || echo 'ERROR: systemd query failed'; "
+    "else echo 'systemd not available (non-systemd container)'; fi; "
+    "echo '=== [5/6] SYSTEMD FAILED ==='; "
+    "if command -v systemctl >/dev/null 2>&1; then "
+    "systemctl --failed --no-pager --no-legend 2>/dev/null || echo 'None'; "
+    "else echo 'systemd not available'; fi; "
+    "echo '=== [6/6] RECENT ERRORS ==='; "
+    "if command -v journalctl >/dev/null 2>&1; then "
+    "journalctl -p err -n 30 --no-pager --no-hostname 2>/dev/null || echo 'ERROR: journald query failed'; "
+    "else echo 'journald not available'; fi"
+)
+
+# Allowlist: permitted Docker Compose sub-commands (no free shell)
+_COMPOSE_ACTIONS = frozenset({"up", "down", "pull", "restart", "ps", "logs"})
+
+# Explicit systemd command mapping (documents and limits allowed shell operations)
+_SYSTEMD_CMDS = {
+    "restart": "systemctl restart",
+    "start":   "systemctl start",
+    "stop":    "systemctl stop",
+}
 
 @mcp.tool()
 def list_nodes() -> list:
@@ -629,6 +770,173 @@ def task_wait(upid: str, timeout: int = 180) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+@mcp.tool()
+def inspect_container_services(vmid: int, query: str = "all") -> dict:
+    """Inspect services inside a running LXC container. Read-only — no approval needed.
+    vmid: LXC container VMID.
+    query: What to inspect. Options:
+      docker_ps, docker_ps_all, docker_compose,
+      systemd_running, systemd_failed,
+      disk, memory, network, errors, processes, uptime,
+      all (runs all checks in a single exec call).
+    """
+    try:
+        _assert_lxc(vmid)
+        if query == "all":
+            parts = [
+                f"echo '=== {k.upper()} ==='; {cmd}; echo"
+                for k, cmd in _INSPECT_CMDS.items()
+            ]
+            output = _exec_lxc(vmid, "; ".join(parts), timeout=60)
+            return {"vmid": vmid, "query": "all", "output": output}
+        if query not in _INSPECT_CMDS:
+            return {
+                "error": f"Unknown query '{query}'.",
+                "allowed": sorted(_INSPECT_CMDS.keys()) + ["all"],
+            }
+        output = _exec_lxc(vmid, _INSPECT_CMDS[query], timeout=20)
+        return {"vmid": vmid, "query": query, "output": output}
+    except Exception as e:
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+@mcp.tool()
+def diagnose_container(vmid: int) -> dict:
+    """Run a full diagnostic on a running LXC container. Returns a unified health report.
+    Covers resources, Docker services, Compose projects, systemd services,
+    failed units, and recent error logs.
+    Use this as the FIRST step whenever any service issue is reported.
+    vmid: LXC container VMID.
+    """
+    try:
+        _assert_lxc(vmid)
+        output = _exec_lxc(vmid, _DIAG_SCRIPT, timeout=60)
+        return {
+            "vmid": vmid,
+            "timestamp": datetime.now().isoformat(),
+            "report": output,
+        }
+    except Exception as e:
+        return {"error": str(e), "traceback": traceback.format_exc()}
+
+@mcp.tool()
+def restart_docker_container(vmid: int, container_name: str) -> dict:
+    """Restart a specific Docker container inside an LXC. Requires user approval.
+    vmid: LXC container VMID.
+    container_name: Docker container name (e.g. 'immich', 'postgres', 'homepage').
+    """
+    lock = None
+    try:
+        _assert_lxc(vmid)
+        _validate_name(container_name, "container_name")
+        lock = _acquire_vmid_lock(vmid)
+        output = _exec_lxc(vmid, f"docker restart {container_name}", timeout=30)
+        _audit(vmid, "restart_docker_container", f"container={container_name}")
+        return {"status": "success", "vmid": vmid, "container": container_name, "output": output}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if lock:
+            lock.release()
+
+@mcp.tool()
+def docker_compose_action(vmid: int, action: str, compose_dir: str = None) -> dict:
+    """Run a Docker Compose operation inside an LXC. Requires user approval.
+    vmid: LXC container VMID.
+    action: Compose sub-command. Allowed: up, down, pull, restart, ps, logs.
+    compose_dir: Absolute path to the docker-compose.yml directory (auto-detects if omitted).
+    """
+    lock = None
+    try:
+        _assert_lxc(vmid)
+        if action not in _COMPOSE_ACTIONS:
+            return {
+                "error": f"Invalid action '{action}'.",
+                "allowed": sorted(_COMPOSE_ACTIONS),
+            }
+        if compose_dir:
+            if not re.match(r"^[a-zA-Z0-9/_\-\.]+$", compose_dir):
+                return {"error": f"Invalid compose_dir path '{compose_dir}'."}
+            base = f"cd {shlex.quote(compose_dir)} && docker compose {action}"
+        else:
+            base = f"docker compose {action}"
+        # Per-action flags: each sub-command has its own safe defaults
+        if action == "up":
+            cmd = f"{base} -d"
+        elif action == "logs":
+            cmd = f"{base} --tail=100 --no-color"
+        else:
+            cmd = base
+        timeout = 120 if action == "pull" else 60
+        lock = _acquire_vmid_lock(vmid)
+        output = _exec_lxc(vmid, cmd, timeout=timeout)
+        _audit(vmid, f"docker_compose_{action}", f"dir={compose_dir or 'cwd'}")
+        return {"status": "success", "vmid": vmid, "action": action, "output": output}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if lock:
+            lock.release()
+
+@mcp.tool()
+def restart_service(vmid: int, service_name: str) -> dict:
+    """Restart a systemd service inside a running LXC. Requires user approval.
+    vmid: LXC container VMID.
+    service_name: systemd unit name (e.g. 'adguardhome', 'unbound', 'nginx').
+    """
+    lock = None
+    try:
+        _assert_lxc(vmid)
+        _validate_name(service_name, "service_name")
+        lock = _acquire_vmid_lock(vmid)
+        output = _exec_lxc(vmid, f"{_SYSTEMD_CMDS['restart']} {service_name}", timeout=30)
+        _audit(vmid, "restart_service", f"service={service_name}")
+        return {"status": "success", "vmid": vmid, "service": service_name, "output": output}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if lock:
+            lock.release()
+
+@mcp.tool()
+def start_service(vmid: int, service_name: str) -> dict:
+    """Start a stopped systemd service inside a running LXC. Requires user approval.
+    vmid: LXC container VMID.
+    service_name: systemd unit name (e.g. 'adguardhome', 'unbound').
+    """
+    lock = None
+    try:
+        _assert_lxc(vmid)
+        _validate_name(service_name, "service_name")
+        lock = _acquire_vmid_lock(vmid)
+        output = _exec_lxc(vmid, f"{_SYSTEMD_CMDS['start']} {service_name}", timeout=30)
+        _audit(vmid, "start_service", f"service={service_name}")
+        return {"status": "success", "vmid": vmid, "service": service_name, "output": output}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if lock:
+            lock.release()
+
+@mcp.tool()
+def stop_service(vmid: int, service_name: str) -> dict:
+    """Stop a running systemd service inside an LXC. Requires explicit user approval.
+    vmid: LXC container VMID.
+    service_name: systemd unit name. Use with extra caution.
+    """
+    lock = None
+    try:
+        _assert_lxc(vmid)
+        _validate_name(service_name, "service_name")
+        lock = _acquire_vmid_lock(vmid)
+        output = _exec_lxc(vmid, f"{_SYSTEMD_CMDS['stop']} {service_name}", timeout=30)
+        _audit(vmid, "stop_service", f"service={service_name}")
+        return {"status": "success", "vmid": vmid, "service": service_name, "output": output}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        if lock:
+            lock.release()
+
 if __name__ == "__main__":
     mcp.run(transport="sse", host="0.0.0.0", port=8380)
 PY_EOF
@@ -872,6 +1180,45 @@ Manage Docker containers running inside this LXC container.
 ### 3. DuckDuckGo MCP (duckduckgo-mcp)
 Search the web for documentation, troubleshooting, etc.
 
+### 4. Service Management Tools (in proxmox-mcp)
+Inspect and control services **inside** other LXC containers via Proxmox API exec.
+
+| Tool | Approval? | Description |
+|------|-----------|-------------|
+| `inspect_container_services(vmid, query)` | ❌ No | Read-only inspection (allowlist enforced in code) |
+| `diagnose_container(vmid)` | ❌ No | Full health report: resources + services + errors |
+| `restart_docker_container(vmid, container_name)` | ✅ Yes | Restart a specific Docker container |
+| `docker_compose_action(vmid, action, compose_dir)` | ✅ Yes | Compose: up / down / pull / restart / ps / logs |
+| `restart_service(vmid, service_name)` | ✅ Yes | Restart a systemd service |
+| `start_service(vmid, service_name)` | ✅ Yes | Start a stopped systemd service |
+| `stop_service(vmid, service_name)` | ✅ Yes | Stop a systemd service (extra caution) |
+
+## 🔍 Container Service Management Rules
+
+### Mandatory Diagnosis-Before-Action
+
+**ALWAYS run `diagnose_container(vmid)` FIRST** — never perform maintenance without a fresh diagnosis.
+
+Then present to the user:
+1. **Detected problem** — what the diagnostic report shows
+2. **Proposed action** — the exact tool and parameters you will call
+3. **Expected outcome** — what should happen after the action
+
+Wait for explicit approval: (CONFIRMED / YES / موافق / ماشي / تمام)
+
+**Staleness rule:** If the last diagnosis was from a previous session or more than 15 minutes ago, always run `diagnose_container()` again before taking any action.
+
+### Service Type Priority
+
+**Docker-based services** (Immich, N8N, Homepage, Vaultwarden, Portainer, NPM, etc.):
+- Prefer `docker_compose_action(vmid, "restart")` over restarting individual containers
+- For updates: `docker_compose_action(vmid, "pull")` then `docker_compose_action(vmid, "up")`
+- Use `restart_docker_container()` only for a single isolated container issue
+
+**Systemd-based services** (AdGuard Home, Unbound, etc.):
+- Check `inspect_container_services(vmid, "systemd_failed")` first
+- Use `restart_service()` or `start_service()` for recovery
+
 ## 📋 MANDATORY CONFIRMATION PROTOCOL
 
 1. **NO UNILATERAL ACTION** — Never execute destructive or administrative operations without explicit user approval.
@@ -895,6 +1242,24 @@ Search the web for documentation, troubleshooting, etc.
 
 **User asks: "What's the server status?"**
 → Use `get_node_status()` and `get_storage_status()`
+
+**User reports: "Immich is not working" (LXC vmid: 105)**
+→ 1. Use `diagnose_container(105)` — get full health report
+→ 2. Identify root cause (e.g. "postgres container is stopped")
+→ 3. Explain detected problem, proposed action, expected outcome
+→ 4. Wait for approval
+→ 5. Use `restart_docker_container(105, "immich-postgres")` or `docker_compose_action(105, "restart", "/opt/immich")`
+→ 6. Use `inspect_container_services(105, "docker_ps")` to verify recovery
+→ 7. Report result
+
+**User reports: "AdGuard not responding" (LXC vmid: 102)**
+→ 1. Use `diagnose_container(102)` — get full health report
+→ 2. Check systemd_failed and errors sections
+→ 3. Explain detected problem, proposed action, expected outcome
+→ 4. Wait for approval
+→ 5. Use `restart_service(102, "adguardhome")`
+→ 6. Use `inspect_container_services(102, "systemd_running")` to verify
+→ 7. Report result
 MD_EOF
 
 pct exec "$CTID" -- bash -c "chown -R 10000:10000 /opt/hermes/data 2>/dev/null || true"

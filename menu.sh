@@ -20,15 +20,19 @@ if ! command -v git &> /dev/null; then
     apt-get install -y git >/dev/null 2>&1 || true
 fi
 
+REPO_DIR="/opt/homeserver"
+REMOTE_BRANCH="origin/main"
+
 if [ -d "/opt/homeserver" ]; then
     cd /opt/homeserver
-    # Reset any local changes to ensure clean update
     git fetch origin main -q
-    git reset --hard origin/main -q
 else
     git clone https://github.com/3lmagary/homeserver.git /opt/homeserver -q
     cd /opt/homeserver
+    git fetch origin main -q
 fi
+
+SCRIPT_FILES=("setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_hermes.sh")
 declare -A SCRIPT_TITLES
 SCRIPT_TITLES["setup.sh"]="Proxmox Base Node Setup"
 SCRIPT_TITLES["nas_setup.sh"]="Expandable Samba NAS Setup"
@@ -37,9 +41,53 @@ SCRIPT_TITLES["setup_dashboard.sh"]="AutoExposer DNS/SSL/Homepage Sync (Python)"
 SCRIPT_TITLES["adguard_unbound.sh"]="AdGuard Home + Unbound DNS Setup"
 SCRIPT_TITLES["setup_hermes.sh"]="Hermes AI Agent Stack (Autonomous AI Agent & Dashboard)"
 
+declare -A SCRIPT_UPDATED
+
+refresh_update_state() {
+    git fetch origin main -q
+    declare -gA SCRIPT_UPDATED=()
+    for script in "${SCRIPT_FILES[@]}"; do
+        if [ -f "$script" ] && ! git diff --quiet HEAD.."$REMOTE_BRANCH" -- "$script"; then
+            SCRIPT_UPDATED["$script"]=1
+        fi
+    done
+}
+
+show_update_summary() {
+    local script="$1"
+    echo -e "\n${YELLOW}Updates detected for:${NC} ${BOLD}$script${NC}"
+    echo -e "${YELLOW}Commits:${NC}"
+    git log --oneline --no-decorate HEAD.."$REMOTE_BRANCH" -- "$script" | head -n 10 || true
+    echo -e "\n${YELLOW}Diff stat:${NC}"
+    git diff --stat HEAD.."$REMOTE_BRANCH" -- "$script" || true
+    echo -e ""
+}
+
+confirm_repo_update() {
+    echo -e "${YELLOW}A newer version of this script exists in the repository.${NC}"
+    read -r -p "Apply the update before running it? [Y/n]: " APPLY_UPDATE < /dev/tty || true
+    if [[ "${APPLY_UPDATE,,}" == "n" ]]; then
+        return 1
+    fi
+
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        echo -e "${YELLOW}Warning: local changes will be replaced by the repository version.${NC}"
+        read -r -p "Continue anyway? [y/N]: " FORCE_UPDATE < /dev/tty || true
+        if [[ ! "${FORCE_UPDATE,,}" == "y" ]]; then
+            return 1
+        fi
+    fi
+
+    git reset --hard "$REMOTE_BRANCH" -q
+    git clean -fd -q
+    return 0
+}
+
+refresh_update_state
+
 # Dynamically scan for available scripts
 AVAILABLE_SCRIPTS=()
-for key in "setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_hermes.sh"; do
+for key in "${SCRIPT_FILES[@]}"; do
     if [ -f "$key" ]; then
         AVAILABLE_SCRIPTS+=("$key")
     fi
@@ -72,6 +120,9 @@ trap show_cursor EXIT INT TERM
 options=()
 for script in "${AVAILABLE_SCRIPTS[@]}"; do
     title="${SCRIPT_TITLES[$script]:-$script}"
+    if [ -n "${SCRIPT_UPDATED[$script]:-}" ]; then
+        title="${title} ${YELLOW}[update available]${NC}"
+    fi
     options+=("$title (${BLUE}$script${NC})")
 done
 options+=("${RED}Exit Menu${NC}")
@@ -165,6 +216,33 @@ while true; do
     # Execute selected script
     SELECTED_SCRIPT="${AVAILABLE_SCRIPTS[$selected]}"
     SELECTED_TITLE="${SCRIPT_TITLES[$SELECTED_SCRIPT]:-$SELECTED_SCRIPT}"
+
+    if [ -n "${SCRIPT_UPDATED[$SELECTED_SCRIPT]:-}" ]; then
+        show_update_summary "$SELECTED_SCRIPT"
+        if ! confirm_repo_update; then
+            echo -e "\n${YELLOW}Skipped update. Returning to menu...${NC}"
+            sleep 1
+            continue
+        fi
+        echo -e "\n${GREEN}Repository updated. Refreshing menu state...${NC}"
+        refresh_update_state
+        AVAILABLE_SCRIPTS=()
+        for key in "${SCRIPT_FILES[@]}"; do
+            if [ -f "$key" ]; then
+                AVAILABLE_SCRIPTS+=("$key")
+            fi
+        done
+        options=()
+        for script in "${AVAILABLE_SCRIPTS[@]}"; do
+            title="${SCRIPT_TITLES[$script]:-$script}"
+            if [ -n "${SCRIPT_UPDATED[$script]:-}" ]; then
+                title="${title} ${YELLOW}[update available]${NC}"
+            fi
+            options+=("$title (${BLUE}$script${NC})")
+        done
+        options+=("${RED}Exit Menu${NC}")
+        num_options=${#options[@]}
+    fi
     
     echo -e "\n${GREEN}Starting: $SELECTED_TITLE...${NC}"
     echo -e "${YELLOW}--------------------------------------------------------------${NC}\n"
