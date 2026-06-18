@@ -1295,8 +1295,11 @@ fi
 
 trap - EXIT
 echo ""
-DASHBOARD_URL="http://$STATIC_IP:9119"
-[ -n "$CF_DOMAIN" ] && DASHBOARD_URL="https://hermes.$CF_DOMAIN"
+if [ -n "$CF_DOMAIN" ]; then
+  DASHBOARD_URL="https://hermes.$CF_DOMAIN"
+else
+  DASHBOARD_URL="https://hermes.<your-domain>"
+fi
 
 log_info "============================================"
 log_info "  Setup complete!"
