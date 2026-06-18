@@ -1337,14 +1337,14 @@ trap - EXIT
 echo ""
 if [ -n "$CF_DOMAIN" ]; then
   DASHBOARD_URL="https://hermes.$CF_DOMAIN"
-else
-  DASHBOARD_URL="AutoExposer domain not found"
 fi
 
 log_info "============================================"
 log_info "  Setup complete!"
 log_info "  Container IP : $STATIC_IP"
-log_info "  Dashboard    : $DASHBOARD_URL"
+if [ -n "${DASHBOARD_URL:-}" ]; then
+  log_info "  Dashboard    : $DASHBOARD_URL"
+fi
 log_info "  Mode         : $($UPDATE_MODE && echo 'UPDATE (incremental)' || echo 'FRESH INSTALL')"
 log_info "============================================"
 
