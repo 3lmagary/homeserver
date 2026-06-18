@@ -1313,8 +1313,9 @@ done
 pct exec "$CTID" -- bash -c "cd /opt/hermes && docker compose up -d --build --pull never"
 
 # AutoExposer Integration
+AUTOEXPOSER_DIR="/opt/homeserver/auto_exposer"
 CF_DOMAIN=""
-CF_ENV_FILE="/opt/homeserver/auto_exposer/.env"
+CF_ENV_FILE="$AUTOEXPOSER_DIR/.env"
 if [ -f "$CF_ENV_FILE" ]; then
   CF_DOMAIN=$(awk -F= '
     $1 == "CF_DOMAIN" {
@@ -1328,9 +1329,15 @@ if [ -f "$CF_ENV_FILE" ]; then
     }
   ' "$CF_ENV_FILE" 2>/dev/null || true)
 fi
-if [ -n "$CF_DOMAIN" ]; then
+if [ -d "$AUTOEXPOSER_DIR" ] && [ -f "$AUTOEXPOSER_DIR/main.py" ]; then
   log_info "Triggering AutoExposer..."
-  (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync)
+  set +e
+  (cd "$AUTOEXPOSER_DIR" && ./venv/bin/python main.py sync)
+  AUTOEXPOSER_STATUS=$?
+  set -e
+  if [ $AUTOEXPOSER_STATUS -ne 0 ]; then
+    log_warn "AutoExposer sync returned status $AUTOEXPOSER_STATUS."
+  fi
 fi
 
 trap - EXIT
