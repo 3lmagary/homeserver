@@ -180,12 +180,15 @@ if [ -z "$CF_DOMAIN" ]; then
     CF_DOMAIN=${CF_DOMAIN_INPUT:-"example.com"}
 fi
 
-# Ensure secrets are generated on fresh install
-if [ "$IS_UPDATE" = false ]; then
+# Ensure secrets are generated if missing or on fresh install
+if [ -z "${DB_PASS:-}" ]; then
     echo -e "${YELLOW}Generating secure internal database password...${NC}"
     DB_PASS=$(openssl rand -hex 12)
-    
+fi
+if [ -z "${N8N_ENCRYPTION_KEY:-}" ]; then
     N8N_ENCRYPTION_KEY=$(openssl rand -hex 16)
+fi
+if [ -z "${EVO_API_KEY:-}" ]; then
     EVO_API_KEY=$(openssl rand -hex 12)
 fi
 
