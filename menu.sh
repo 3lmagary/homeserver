@@ -45,19 +45,15 @@ if [ -d "/opt/homeserver" ]; then
     BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
     
     if [ -n "$LOCAL" ] && [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ] && [ "$LOCAL" = "$BASE" ]; then
-        echo -e "${YELLOW}[i] Updates are available in the repository.${NC}"
-        read -r -p "Apply the updates and pull the latest scripts? [Y/n]: " APPLY_UPDATE < /dev/tty || true
-        APPLY_UPDATE=${APPLY_UPDATE:-"y"}
-        if [[ ! "${APPLY_UPDATE,,}" == "n" ]]; then
-            echo -e "${GREEN}Stashing any local changes and pulling latest scripts...${NC}"
-            git stash -q || true
-            git pull origin main -q || true
-            git stash pop -q || true
-            echo -e "${GREEN}Repository updated successfully. Reloading menu...${NC}"
-            sleep 1
-            exec bash "$0" "$@"
-        fi
+        echo -e "${GREEN}[i] Pulling the latest updates from GitHub...${NC}"
+        git stash -q || true
+        git pull origin main -q || true
+        git stash pop -q || true
+        echo -e "${GREEN}Repository updated successfully. Reloading menu...${NC}"
+        sleep 1
+        exec bash "$0" "$@"
     fi
+
 else
     git clone https://github.com/3lmagary/homeserver.git /opt/homeserver -q
     cd /opt/homeserver
