@@ -493,12 +493,15 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
 
         # Create Cloudflare DNS Record (pointing to local NPM IP)
         if cf and npm_ip:
-            subdomain = s.domain.replace(f".{base_domain}", "")
-            result = cf.create_dns_record(subdomain, npm_ip, proxied=False)
-            if result:
-                cf_status = "✓ Done (Local IP)"
+            if s.skip_cf:
+                cf_status = "Skipped (Skip CF)"
             else:
-                cf_status = "✗ Failed"
+                subdomain = s.domain.replace(f".{base_domain}", "")
+                result = cf.create_dns_record(subdomain, npm_ip, proxied=False)
+                if result:
+                    cf_status = "✓ Done (Local IP)"
+                else:
+                    cf_status = "✗ Failed"
 
         results_table.add_row(s.name, s.domain, npm_status, cf_status)
 

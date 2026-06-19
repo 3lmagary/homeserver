@@ -13,3 +13,5 @@ class DiscoveredService(BaseModel):
     lxc_name: Optional[str] = None
     advanced_config: str = ""
     forward_scheme: str = "http"
+    skip_cf: bool = False
+

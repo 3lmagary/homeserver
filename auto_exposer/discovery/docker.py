@@ -86,7 +86,8 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
                     group=labels.get("autoexposer.group", "Docker Services"),
                     icon=labels.get("autoexposer.icon", "docker"),
                     advanced_config=labels.get("autoexposer.advanced_config", ""),
-                    lxc_name=lxc_name
+                    lxc_name=lxc_name,
+                    skip_cf=labels.get("autoexposer.skip_cf", "false").lower() == "true"
                 ))
             # Known service auto-detection
             elif name in KNOWN_SERVICES:
@@ -100,7 +101,8 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
                     group=info["group"],
                     icon=info["icon"],
                     advanced_config=info.get("advanced_config", ""),
-                    lxc_name=lxc_name
+                    lxc_name=lxc_name,
+                    skip_cf=info.get("skip_cf", False)
                 ))
             else:
                 # Unknown container - still add with best-effort

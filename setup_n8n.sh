@@ -362,7 +362,7 @@ fi)
       postgres:
         condition: service_healthy
     labels:
-      - "autoexposer.enable=false"
+      - "autoexposer.skip_cf=true"
 
   redis:
     image: redis:7
