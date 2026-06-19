@@ -12,9 +12,21 @@ if [ "$EUID" -ne 0 ]; then
   echo -e "\033[0;31mError: Please run this menu script as root or using sudo.\033[0m"
   exit 1
 fi
+GREEN="\033[0;32m"
+BLUE="\033[0;34m"
+YELLOW="\033[1;33m"
+RED="\033[0;31m"
+CYAN="\033[0;36m"
+BOLD="\033[1m"
+NC="\033[0m"
+ESC=$(printf '\033')
+
+echo -e "${BLUE}=========================================="
+echo -e "         Interactive Setup Menu"
+echo -e "==========================================${NC}"
 
 # Auto-update logic: Ensure user always has the latest scripts
-echo -e "\033[0;32m[i] Checking for repository updates...\033[0m"
+echo -e "${GREEN}[i] Checking for repository updates...${NC}"
 if ! command -v git &> /dev/null; then
     apt-get update >/dev/null 2>&1 || true
     apt-get install -y git >/dev/null 2>&1 || true
@@ -26,6 +38,26 @@ REMOTE_BRANCH="origin/main"
 if [ -d "/opt/homeserver" ]; then
     cd /opt/homeserver
     git fetch origin main -q
+    
+    # Check if we are behind origin/main
+    LOCAL=$(git rev-parse HEAD 2>/dev/null || echo "")
+    REMOTE=$(git rev-parse origin/main 2>/dev/null || echo "")
+    BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
+    
+    if [ -n "$LOCAL" ] && [ -n "$REMOTE" ] && [ "$LOCAL" != "$REMOTE" ] && [ "$LOCAL" = "$BASE" ]; then
+        echo -e "${YELLOW}[i] Updates are available in the repository.${NC}"
+        read -r -p "Apply the updates and pull the latest scripts? [Y/n]: " APPLY_UPDATE < /dev/tty || true
+        APPLY_UPDATE=${APPLY_UPDATE:-"y"}
+        if [[ ! "${APPLY_UPDATE,,}" == "n" ]]; then
+            echo -e "${GREEN}Stashing any local changes and pulling latest scripts...${NC}"
+            git stash -q || true
+            git pull origin main -q || true
+            git stash pop -q || true
+            echo -e "${GREEN}Repository updated successfully. Reloading menu...${NC}"
+            sleep 1
+            exec bash "$0" "$@"
+        fi
+    fi
 else
     git clone https://github.com/3lmagary/homeserver.git /opt/homeserver -q
     cd /opt/homeserver
@@ -42,48 +74,6 @@ SCRIPT_TITLES["adguard_unbound.sh"]="AdGuard Home + Unbound DNS Setup"
 SCRIPT_TITLES["setup_hermes.sh"]="Hermes AI Agent Stack (Autonomous AI Agent & Dashboard)"
 SCRIPT_TITLES["setup_n8n.sh"]="n8n + Evolution API + Postgres Setup (Automation Stack)"
 
-HERMES_UPDATED=false
-
-refresh_hermes_update_state() {
-    git fetch origin main -q
-    HERMES_UPDATED=false
-    if [ -f "setup_hermes.sh" ] && ! git diff --quiet HEAD.."$REMOTE_BRANCH" -- "setup_hermes.sh"; then
-        HERMES_UPDATED=true
-    fi
-}
-
-show_update_summary() {
-    local script="$1"
-    echo -e "\n${YELLOW}Updates detected for:${NC} ${BOLD}$script${NC}"
-    echo -e "${YELLOW}Commits:${NC}"
-    git log --oneline --no-decorate HEAD.."$REMOTE_BRANCH" -- "$script" | head -n 10 || true
-    echo -e "\n${YELLOW}Diff stat:${NC}"
-    git diff --stat HEAD.."$REMOTE_BRANCH" -- "$script" || true
-    echo -e ""
-}
-
-confirm_repo_update() {
-    echo -e "${YELLOW}A newer version of this script exists in the repository.${NC}"
-    read -r -p "Apply the update before running it? [Y/n]: " APPLY_UPDATE < /dev/tty || true
-    if [[ "${APPLY_UPDATE,,}" == "n" ]]; then
-        return 1
-    fi
-
-    if ! git diff --quiet -- "setup_hermes.sh" || ! git diff --cached --quiet -- "setup_hermes.sh"; then
-        echo -e "${YELLOW}Warning: local changes in setup_hermes.sh will be replaced by the repository version.${NC}"
-        read -r -p "Continue anyway? [y/N]: " FORCE_UPDATE < /dev/tty || true
-        if [[ ! "${FORCE_UPDATE,,}" == "y" ]]; then
-            return 1
-        fi
-    fi
-
-    git fetch origin main -q
-    git merge "$REMOTE_BRANCH" -q || git checkout "$REMOTE_BRANCH" -- "setup_hermes.sh"
-    return 0
-}
-
-refresh_hermes_update_state
-
 # Dynamically scan for available scripts
 AVAILABLE_SCRIPTS=()
 for key in "${SCRIPT_FILES[@]}"; do
@@ -97,16 +87,6 @@ if [ ${#AVAILABLE_SCRIPTS[@]} -eq 0 ]; then
     exit 1
 fi
 
-# ANSI Escape Codes and helpers for arrow key navigation
-ESC=$(printf '\033')
-BOLD="\033[1m"
-CYAN="\033[0;36m"
-RED="\033[0;31m"
-GREEN="\033[0;32m"
-YELLOW="\033[1;33m"
-BLUE="\033[0;34m"
-NC="\033[0m"
-
 cursor_up() { printf "${ESC}[%dA" "${1:-1}"; }
 clear_line() { printf "${ESC}[2K"; }
 hide_cursor() { printf "${ESC}[?25l"; }
@@ -119,9 +99,6 @@ trap show_cursor EXIT INT TERM
 options=()
 for script in "${AVAILABLE_SCRIPTS[@]}"; do
     title="${SCRIPT_TITLES[$script]:-$script}"
-    if [ "$script" = "setup_hermes.sh" ] && $HERMES_UPDATED; then
-        title="${title} ${YELLOW}[update available]${NC}"
-    fi
     options+=("$title (${BLUE}$script${NC})")
 done
 options+=("${RED}Exit Menu${NC}")
@@ -216,26 +193,7 @@ while true; do
     SELECTED_SCRIPT="${AVAILABLE_SCRIPTS[$selected]}"
     SELECTED_TITLE="${SCRIPT_TITLES[$SELECTED_SCRIPT]:-$SELECTED_SCRIPT}"
 
-    if [ "$SELECTED_SCRIPT" = "setup_hermes.sh" ] && $HERMES_UPDATED; then
-        show_update_summary "$SELECTED_SCRIPT"
-        if ! confirm_repo_update; then
-            echo -e "\n${YELLOW}Skipped update. Returning to menu...${NC}"
-            sleep 1
-            continue
-        fi
-        echo -e "\n${GREEN}Repository updated. Refreshing menu state...${NC}"
-        refresh_hermes_update_state
-        options=()
-        for script in "${AVAILABLE_SCRIPTS[@]}"; do
-            title="${SCRIPT_TITLES[$script]:-$script}"
-            if [ "$script" = "setup_hermes.sh" ] && $HERMES_UPDATED; then
-                title="${title} ${YELLOW}[update available]${NC}"
-            fi
-            options+=("$title (${BLUE}$script${NC})")
-        done
-        options+=("${RED}Exit Menu${NC}")
-        num_options=${#options[@]}
-    fi
+    # Update check is now handled automatically at startup
     
     echo -e "\n${GREEN}Starting: $SELECTED_TITLE...${NC}"
     echo -e "${YELLOW}--------------------------------------------------------------${NC}\n"
