@@ -237,8 +237,8 @@ if [[ "$INSTALL_PGADMIN_INPUT" =~ ^[Yy]$ ]]; then
     fi
 fi
 
-# Ask Cloudflare Tunnel token (only on fresh install)
-if [ "$IS_UPDATE" = false ]; then
+# Ask Cloudflare Tunnel token if empty
+if [ -z "$CF_TOKEN" ]; then
     read -sp "Enter Cloudflare Tunnel Token (leave blank if you don't use it yet): " CF_TOKEN_INPUT < /dev/tty; echo
     CF_TOKEN=$CF_TOKEN_INPUT
 fi
