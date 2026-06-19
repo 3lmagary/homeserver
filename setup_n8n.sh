@@ -60,10 +60,10 @@ if [ -n "$EXISTING_CTID" ]; then
     fi
 
     
-    # Read existing secrets from container's /opt/n8n/.env
-    if pct exec $CTID -- test -f /opt/n8n/.env; then
+    # Read existing secrets from container's /opt/n8n/.env directly from the host filesystem to prevent hanging
+    if [ -f "/var/lib/lxc/$CTID/rootfs/opt/n8n/.env" ]; then
         echo -e "${GREEN}Reading existing secrets and settings...${NC}"
-        EXISTING_ENV=$(pct exec $CTID -- cat /opt/n8n/.env)
+        EXISTING_ENV=$(cat "/var/lib/lxc/$CTID/rootfs/opt/n8n/.env")
         
         # Use existing secrets if found
         DB_PASS_EXISTING=$(echo "$EXISTING_ENV" | grep "^POSTGRES_PASSWORD=" | cut -d= -f2- | tr -d '\r')
@@ -82,9 +82,9 @@ if [ -n "$EXISTING_CTID" ]; then
         if [ -n "$EVO_API_KEY_EXISTING" ]; then EVO_API_KEY="$EVO_API_KEY_EXISTING"; fi
     fi
     
-    # Read existing Cloudflare Tunnel token from compose file
-    if pct exec $CTID -- test -f /opt/n8n/docker-compose.yml; then
-        EXISTING_COMPOSE=$(pct exec $CTID -- cat /opt/n8n/docker-compose.yml)
+    # Read existing Cloudflare Tunnel token from compose file directly from the host filesystem
+    if [ -f "/var/lib/lxc/$CTID/rootfs/opt/n8n/docker-compose.yml" ]; then
+        EXISTING_COMPOSE=$(cat "/var/lib/lxc/$CTID/rootfs/opt/n8n/docker-compose.yml")
         CF_TOKEN_EXISTING=$(echo "$EXISTING_COMPOSE" | grep -A 10 "cloudflared:" | grep "TUNNEL_TOKEN=" | cut -d= -f2- | tr -d '\r' | head -n 1)
         if [ -z "$CF_TOKEN_EXISTING" ]; then
             CF_TOKEN_EXISTING=$(echo "$EXISTING_COMPOSE" | grep -oP 'TUNNEL_TOKEN=\K\S+' || true)
