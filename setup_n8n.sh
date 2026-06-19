@@ -443,7 +443,7 @@ pct exec $CTID -- bash -c "mkdir -p /opt/n8n/n8n_data && chown -R 1000:1000 /opt
 if [[ "$INSTALL_PGADMIN" =~ ^[Yy]$ ]]; then
     pct exec $CTID -- bash -c "mkdir -p /opt/n8n/pgadmin_data && chown -R 5050:5050 /opt/n8n/pgadmin_data"
 fi
-pct exec $CTID -- bash -c "cd /opt/n8n && docker compose up -d"
+pct exec $CTID -- bash -c "cd /opt/n8n && docker compose up -d --remove-orphans"
 
 # Deployment successful - disable rollback
 ROLLBACK_REQUIRED=false
