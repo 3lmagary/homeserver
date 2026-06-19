@@ -16,6 +16,9 @@ KNOWN_SERVICES = {
     "immich_server": {"name": "Immich", "port": 2283, "group": "Media", "icon": "immich"},
     "jellyfin": {"name": "Jellyfin", "port": 8096, "group": "Media", "icon": "jellyfin"},
     "n8n": {"name": "n8n", "port": 5678, "group": "Automation", "icon": "n8n"},
+    "pgadmin": {"name": "pgAdmin", "port": 80, "group": "Database", "icon": "pgadmin"},
+    "evolution_api": {"name": "Evolution API", "port": 8080, "group": "Automation", "icon": "api"},
+    "evolution-api": {"name": "Evolution API", "port": 8080, "group": "Automation", "icon": "api"},
     "nextcloud": {"name": "Nextcloud", "port": 8080, "group": "Cloud", "icon": "nextcloud"},
 }
 

@@ -98,7 +98,7 @@ def update_homepage_config(all_services, ctid):
 
         # Skip services that do not have a user-facing Web interface (Web UI)
         name_lower = s.name.lower()
-        if any(x in name_lower for x in ["evolution", "api", "agent", "tunnel", "cloudflared"]):
+        if any(x in name_lower for x in ["agent", "tunnel", "cloudflared"]):
             continue
 
         g_name = map_group_name(s.group, s.name)

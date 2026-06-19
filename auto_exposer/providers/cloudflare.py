@@ -66,14 +66,19 @@ class CloudflareClient:
             return None
         full_domain = f"{subdomain}.{self.domain}" if subdomain != self.domain else self.domain
         try:
-            # Check if record already exists
+            # Check if record already exists (could be A, CNAME, etc.)
             existing = self._find_record(full_domain)
             if existing:
-                # Update if IP changed
-                if existing["content"] != ip:
-                    return self._update_record(existing["id"], full_domain, ip, proxied)
-                logger.info(f"DNS record for {full_domain} already exists with correct IP")
-                return existing
+                if existing.get("type") == "A":
+                    # Update if IP changed
+                    if existing["content"] != ip:
+                        return self._update_record(existing["id"], full_domain, ip, proxied)
+                    logger.info(f"DNS record for {full_domain} already exists with correct IP")
+                    return existing
+                else:
+                    # Conflicting record type (like CNAME), delete it first to avoid collision
+                    logger.warning(f"Conflicting {existing.get('type')} record found for {full_domain}. Deleting it...")
+                    self.delete_dns_record(existing["id"])
             
             res = requests.post(
                 f"{self.base_url}/zones/{self.zone_id}/dns_records",
@@ -98,14 +103,14 @@ class CloudflareClient:
             return None
 
     def _find_record(self, full_domain):
-        """Find an existing DNS record by full domain name."""
+        """Find an existing DNS record by full domain name (any type)."""
         if not self.zone_id:
             return None
         try:
             res = requests.get(
                 f"{self.base_url}/zones/{self.zone_id}/dns_records",
                 headers=self.headers,
-                params={"type": "A", "name": full_domain}
+                params={"name": full_domain}
             )
             data = res.json()
             if data.get("success") and data.get("result"):

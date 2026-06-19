@@ -197,44 +197,37 @@ if [ -z "${EVO_API_KEY:-}" ]; then
     EVO_API_KEY=$(openssl rand -hex 12)
 fi
 
-# Ask pgAdmin installation option (only on fresh install)
+# Ask pgAdmin installation option
 INSTALL_PGADMIN="n"
-if [ "$IS_UPDATE" = false ]; then
-    DEFAULT_INSTALL_PGADMIN="n"
-    if [ -n "$PGADMIN_EMAIL" ]; then
-        DEFAULT_INSTALL_PGADMIN="y"
-    fi
+DEFAULT_INSTALL_PGADMIN="n"
+if [ -n "$PGADMIN_EMAIL" ]; then
+    DEFAULT_INSTALL_PGADMIN="y"
+fi
 
-    echo -e "\n${YELLOW}Do you want to install pgAdmin? (Database Management UI)${NC}"
-    echo "Most users don't need this unless they want to manually inspect the database."
-    read -p "Install pgAdmin? (y/N) [Default: $DEFAULT_INSTALL_PGADMIN]: " INSTALL_PGADMIN_INPUT < /dev/tty
-    INSTALL_PGADMIN_INPUT=${INSTALL_PGADMIN_INPUT:-$DEFAULT_INSTALL_PGADMIN}
+echo -e "\n${YELLOW}Do you want to install pgAdmin? (Database Management UI)${NC}"
+echo "Most users don't need this unless they want to manually inspect the database."
+read -p "Install pgAdmin? (y/N) [Default: $DEFAULT_INSTALL_PGADMIN]: " INSTALL_PGADMIN_INPUT < /dev/tty
+INSTALL_PGADMIN_INPUT=${INSTALL_PGADMIN_INPUT:-$DEFAULT_INSTALL_PGADMIN}
 
-    if [[ "$INSTALL_PGADMIN_INPUT" =~ ^[Yy]$ ]]; then
-        INSTALL_PGADMIN="y"
-        DEFAULT_EMAIL=${PGADMIN_EMAIL:-"3lmagary@gmail.com"}
-        read -p "Enter an email for pgAdmin Web UI [Default: $DEFAULT_EMAIL]: " PGADMIN_EMAIL_INPUT < /dev/tty
-        PGADMIN_EMAIL=${PGADMIN_EMAIL_INPUT:-$DEFAULT_EMAIL}
+if [[ "$INSTALL_PGADMIN_INPUT" =~ ^[Yy]$ ]]; then
+    INSTALL_PGADMIN="y"
+    DEFAULT_EMAIL=${PGADMIN_EMAIL:-"3lmagary@gmail.com"}
+    read -p "Enter an email for pgAdmin Web UI [Default: $DEFAULT_EMAIL]: " PGADMIN_EMAIL_INPUT < /dev/tty
+    PGADMIN_EMAIL=${PGADMIN_EMAIL_INPUT:-$DEFAULT_EMAIL}
+    
+    if [ -z "$PGADMIN_PASS" ]; then
+        read -p "Do you want to auto-generate a secure pgAdmin password? (Y/n): " GEN_PG_PASS < /dev/tty
+        GEN_PG_PASS=${GEN_PG_PASS:-"Y"}
         
-        if [ -z "$PGADMIN_PASS" ]; then
-            read -p "Do you want to auto-generate a secure pgAdmin password? (Y/n): " GEN_PG_PASS < /dev/tty
-            GEN_PG_PASS=${GEN_PG_PASS:-"Y"}
-            
-            if [[ "$GEN_PG_PASS" =~ ^[Yy]$ ]]; then
-                PGADMIN_PASS=$(openssl rand -base64 24)
-                echo -e "${GREEN}✓ Auto-generated pgAdmin Password: ${YELLOW}$PGADMIN_PASS${NC}"
-                echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
-                chmod 600 /root/generated-passwords.txt
-            else
-                read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
-                if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
-            fi
+        if [[ "$GEN_PG_PASS" =~ ^[Yy]$ ]]; then
+            PGADMIN_PASS=$(openssl rand -base64 24)
+            echo -e "${GREEN}✓ Auto-generated pgAdmin Password: ${YELLOW}$PGADMIN_PASS${NC}"
+            echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
+            chmod 600 /root/generated-passwords.txt
+        else
+            read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
+            if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
         fi
-    fi
-else
-    # On update, determine if pgAdmin is installed based on retrieved PGADMIN_EMAIL
-    if [ -n "$PGADMIN_EMAIL" ]; then
-        INSTALL_PGADMIN="y"
     fi
 fi
 
