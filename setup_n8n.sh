@@ -183,56 +183,53 @@ if [ "$IS_UPDATE" = false ]; then
     EVO_API_KEY=$(openssl rand -hex 12)
 fi
 
-# Ask pgAdmin installation option
-DEFAULT_INSTALL_PGADMIN="n"
-if [ -n "$PGADMIN_EMAIL" ]; then
-    DEFAULT_INSTALL_PGADMIN="y"
-fi
+# Ask pgAdmin installation option (only on fresh install)
+INSTALL_PGADMIN="n"
+if [ "$IS_UPDATE" = false ]; then
+    DEFAULT_INSTALL_PGADMIN="n"
+    if [ -n "$PGADMIN_EMAIL" ]; then
+        DEFAULT_INSTALL_PGADMIN="y"
+    fi
 
-echo -e "\n${YELLOW}Do you want to install pgAdmin? (Database Management UI)${NC}"
-echo "Most users don't need this unless they want to manually inspect the database."
-read -p "Install pgAdmin? (y/N) [Default: $DEFAULT_INSTALL_PGADMIN]: " INSTALL_PGADMIN_INPUT < /dev/tty
-INSTALL_PGADMIN_INPUT=${INSTALL_PGADMIN_INPUT:-$DEFAULT_INSTALL_PGADMIN}
+    echo -e "\n${YELLOW}Do you want to install pgAdmin? (Database Management UI)${NC}"
+    echo "Most users don't need this unless they want to manually inspect the database."
+    read -p "Install pgAdmin? (y/N) [Default: $DEFAULT_INSTALL_PGADMIN]: " INSTALL_PGADMIN_INPUT < /dev/tty
+    INSTALL_PGADMIN_INPUT=${INSTALL_PGADMIN_INPUT:-$DEFAULT_INSTALL_PGADMIN}
 
-if [[ "$INSTALL_PGADMIN_INPUT" =~ ^[Yy]$ ]]; then
-    DEFAULT_EMAIL=${PGADMIN_EMAIL:-"3lmagary@gmail.com"}
-    read -p "Enter an email for pgAdmin Web UI [Default: $DEFAULT_EMAIL]: " PGADMIN_EMAIL_INPUT < /dev/tty
-    PGADMIN_EMAIL=${PGADMIN_EMAIL_INPUT:-$DEFAULT_EMAIL}
-    
-    if [ -z "$PGADMIN_PASS" ]; then
-        read -p "Do you want to auto-generate a secure pgAdmin password? (Y/n): " GEN_PG_PASS < /dev/tty
-        GEN_PG_PASS=${GEN_PG_PASS:-"Y"}
+    if [[ "$INSTALL_PGADMIN_INPUT" =~ ^[Yy]$ ]]; then
+        INSTALL_PGADMIN="y"
+        DEFAULT_EMAIL=${PGADMIN_EMAIL:-"3lmagary@gmail.com"}
+        read -p "Enter an email for pgAdmin Web UI [Default: $DEFAULT_EMAIL]: " PGADMIN_EMAIL_INPUT < /dev/tty
+        PGADMIN_EMAIL=${PGADMIN_EMAIL_INPUT:-$DEFAULT_EMAIL}
         
-        if [[ "$GEN_PG_PASS" =~ ^[Yy]$ ]]; then
-            PGADMIN_PASS=$(openssl rand -base64 24)
-            echo -e "${GREEN}✓ Auto-generated pgAdmin Password: ${YELLOW}$PGADMIN_PASS${NC}"
-            echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
-            chmod 600 /root/generated-passwords.txt
-        else
-            read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
-            if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
-        fi
-    else
-        read -p "Do you want to change the existing pgAdmin password? (y/N): " CHANGE_PG_PASS < /dev/tty
-        if [[ "$CHANGE_PG_PASS" =~ ^[Yy]$ ]]; then
-            read -sp "Enter new password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
-            if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
+        if [ -z "$PGADMIN_PASS" ]; then
+            read -p "Do you want to auto-generate a secure pgAdmin password? (Y/n): " GEN_PG_PASS < /dev/tty
+            GEN_PG_PASS=${GEN_PG_PASS:-"Y"}
+            
+            if [[ "$GEN_PG_PASS" =~ ^[Yy]$ ]]; then
+                PGADMIN_PASS=$(openssl rand -base64 24)
+                echo -e "${GREEN}✓ Auto-generated pgAdmin Password: ${YELLOW}$PGADMIN_PASS${NC}"
+                echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
+                chmod 600 /root/generated-passwords.txt
+            else
+                read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
+                if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
+            fi
         fi
     fi
 else
-    # Clear out email/pass to avoid adding it to environment if disabled during update
-    PGADMIN_EMAIL=""
-    PGADMIN_PASS=""
+    # On update, determine if pgAdmin is installed based on retrieved PGADMIN_EMAIL
+    if [ -n "$PGADMIN_EMAIL" ]; then
+        INSTALL_PGADMIN="y"
+    fi
 fi
 
-# Ask Cloudflare Tunnel token
-if [ -n "$CF_TOKEN" ]; then
-    read -sp "Enter Cloudflare Tunnel Token [Default: Keep Existing Token]: " CF_TOKEN_INPUT < /dev/tty; echo
-    CF_TOKEN=${CF_TOKEN_INPUT:-$CF_TOKEN}
-else
+# Ask Cloudflare Tunnel token (only on fresh install)
+if [ "$IS_UPDATE" = false ]; then
     read -sp "Enter Cloudflare Tunnel Token (leave blank if you don't use it yet): " CF_TOKEN_INPUT < /dev/tty; echo
     CF_TOKEN=$CF_TOKEN_INPUT
 fi
+
 
 if [ "$IS_UPDATE" = false ]; then
     read -p "Enter Disk Size in GB (default: 30): " DISK_SIZE < /dev/tty
