@@ -17,8 +17,14 @@ KNOWN_SERVICES = {
     "jellyfin": {"name": "Jellyfin", "port": 8096, "group": "Media", "icon": "jellyfin"},
     "n8n": {"name": "n8n", "port": 5678, "group": "Automation", "icon": "n8n"},
     "pgadmin": {"name": "pgAdmin", "port": 80, "group": "Database", "icon": "pgadmin"},
-    "evolution_api": {"name": "Evolution API", "port": 8080, "group": "Automation", "icon": "whatsapp"},
-    "evolution-api": {"name": "Evolution API", "port": 8080, "group": "Automation", "icon": "whatsapp"},
+    "evolution_api": {
+        "name": "Evolution API", "port": 8080, "group": "Automation", "icon": "whatsapp",
+        "advanced_config": "location = / {\n    return 301 /manager;\n}"
+    },
+    "evolution-api": {
+        "name": "Evolution API", "port": 8080, "group": "Automation", "icon": "whatsapp",
+        "advanced_config": "location = / {\n    return 301 /manager;\n}"
+    },
     "nextcloud": {"name": "Nextcloud", "port": 8080, "group": "Cloud", "icon": "nextcloud"},
 }
 
