@@ -51,8 +51,9 @@ if [ -d "/opt/homeserver" ]; then
         git stash pop -q || true
         echo -e "${GREEN}Repository updated successfully. Reloading menu...${NC}"
         sleep 1
-        exec bash "$0" "$@"
+        exec bash /opt/homeserver/menu.sh "$@"
     fi
+
 
 else
     git clone https://github.com/3lmagary/homeserver.git /opt/homeserver -q
