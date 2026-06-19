@@ -322,8 +322,7 @@ if ! command -v python3 &>/dev/null; then
 fi
 
 log_step "Installing Hermes Host Bridge..."
-# SIGPIPE-safe token generation (head -c closes pipe before tr finishes)
-HOST_BRIDGE_TOKEN="$(< /dev/urandom LC_ALL=C tr -dc 'A-Za-z0-9' 2>/dev/null | dd bs=1 count=48 2>/dev/null; true)"
+HOST_BRIDGE_TOKEN="$(openssl rand -hex 24)"
 mkdir -p "$HOST_BRIDGE_DIR"
 
 cat <<'PY_EOF' > "$HOST_BRIDGE_DIR/bridge.py"

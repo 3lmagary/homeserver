@@ -148,7 +148,7 @@ pct exec $CTID -- mkdir -p /opt/core
 
 # Generate Argon2id hash inside the container and retrieve it
 echo -e "${GREEN}Generating Vaultwarden admin password hash...${NC}"
-SALT=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 16)
+SALT=$(openssl rand -hex 8)
 VW_ADMIN_HASH=$(pct exec $CTID -- env VW_PASS="$VW_ADMIN_PASS" VW_SALT="$SALT" bash -c 'echo -n "$VW_PASS" | argon2 "$VW_SALT" -e -id -k 65540 -t 3 -p 4 | grep -o "\$argon2id\$.*" | tr -d "\r"')
 
 if [ -z "$VW_ADMIN_HASH" ]; then

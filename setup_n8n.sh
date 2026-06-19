@@ -105,7 +105,7 @@ fi
 echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
 
 echo -e "${YELLOW}Generating secure internal database password...${NC}"
-DB_PASS=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 24)
+DB_PASS=$(openssl rand -hex 12)
 
 PGADMIN_EMAIL=""
 PGADMIN_PASS=""
@@ -133,7 +133,7 @@ fi
 
 read -sp "Enter Cloudflare Tunnel Token (leave blank if you don't use it yet): " CF_TOKEN < /dev/tty; echo
 
-EVO_API_KEY=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 24)
+EVO_API_KEY=$(openssl rand -hex 12)
 echo -e "${YELLOW}Auto-generated Evolution API Key: ${EVO_API_KEY}${NC}"
 echo -e "${YELLOW}(Please save this key, you will need it to connect n8n to Evolution API!)${NC}"
 
@@ -169,7 +169,7 @@ CREATE DATABASE evolution_db;
 EOF"
 
 # Generate random encryption key for n8n
-N8N_ENCRYPTION_KEY=$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 32)
+N8N_ENCRYPTION_KEY=$(openssl rand -hex 16)
 
 # Write .env file (using tee to avoid special character issues)
 pct exec $CTID -- bash -c "cat > /opt/n8n/.env << 'ENVEOF'
