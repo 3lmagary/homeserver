@@ -211,22 +211,28 @@ INSTALL_PGADMIN_INPUT=${INSTALL_PGADMIN_INPUT:-$DEFAULT_INSTALL_PGADMIN}
 
 if [[ "$INSTALL_PGADMIN_INPUT" =~ ^[Yy]$ ]]; then
     INSTALL_PGADMIN="y"
-    DEFAULT_EMAIL=${PGADMIN_EMAIL:-"3lmagary@gmail.com"}
-    read -p "Enter an email for pgAdmin Web UI [Default: $DEFAULT_EMAIL]: " PGADMIN_EMAIL_INPUT < /dev/tty
-    PGADMIN_EMAIL=${PGADMIN_EMAIL_INPUT:-$DEFAULT_EMAIL}
     
-    if [ -z "$PGADMIN_PASS" ]; then
-        read -p "Do you want to auto-generate a secure pgAdmin password? (Y/n): " GEN_PG_PASS < /dev/tty
-        GEN_PG_PASS=${GEN_PG_PASS:-"Y"}
+    if [ "$IS_UPDATE" = true ] && [ -n "$PGADMIN_EMAIL" ] && [ -n "$PGADMIN_PASS" ]; then
+        echo -e "${GREEN}Using existing pgAdmin credentials from .env${NC}"
+    else
+        DEFAULT_EMAIL=${PGADMIN_EMAIL:-"3lmagary@gmail.com"}
+        read -p "Enter an email for pgAdmin Web UI [Default: $DEFAULT_EMAIL]: " PGADMIN_EMAIL_INPUT < /dev/tty
+        PGADMIN_EMAIL=${PGADMIN_EMAIL_INPUT:-$DEFAULT_EMAIL}
         
-        if [[ "$GEN_PG_PASS" =~ ^[Yy]$ ]]; then
-            PGADMIN_PASS=$(openssl rand -base64 24)
-            echo -e "${GREEN}✓ Auto-generated pgAdmin Password: ${YELLOW}$PGADMIN_PASS${NC}"
-            echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
-            chmod 600 /root/generated-passwords.txt
-        else
-            read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
-            if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
+        if [ -z "$PGADMIN_PASS" ]; then
+            read -p "Do you want to auto-generate a secure pgAdmin password? (Y/n): " GEN_PG_PASS < /dev/tty
+            GEN_PG_PASS=${GEN_PG_PASS:-"Y"}
+            
+            if [[ "$GEN_PG_PASS" =~ ^[Yy]$ ]]; then
+                # Use hex to prevent any interpolation or special character issues
+                PGADMIN_PASS=$(openssl rand -hex 12)
+                echo -e "${GREEN}✓ Auto-generated pgAdmin Password: ${YELLOW}$PGADMIN_PASS${NC}"
+                echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
+                chmod 600 /root/generated-passwords.txt
+            else
+                read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
+                if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
+            fi
         fi
     fi
 fi
@@ -436,6 +442,12 @@ pct exec $CTID -- bash -c "mkdir -p /opt/n8n/n8n_data && chown -R 1000:1000 /opt
 if [[ "$INSTALL_PGADMIN" =~ ^[Yy]$ ]]; then
     pct exec $CTID -- bash -c "mkdir -p /opt/n8n/pgadmin_data && chown -R 5050:5050 /opt/n8n/pgadmin_data"
 fi
+pct exec $CTID -- bash -c "cd /opt/n8n && docker compose up -d --remove-orphans postgres redis"
+echo -e "${YELLOW}Waiting for Postgres to be ready to initialize evolution_db...${NC}"
+sleep 10
+# Ensure evolution_db is created, even if postgres volume already existed from a previous run
+pct exec $CTID -- bash -c "docker exec postgres psql -U n8n_admin -d n8n_db -tc \"SELECT 1 FROM pg_database WHERE datname = 'evolution_db'\" | grep -q 1 || docker exec postgres psql -U n8n_admin -d n8n_db -c \"CREATE DATABASE evolution_db;\""
+
 pct exec $CTID -- bash -c "cd /opt/n8n && docker compose up -d --remove-orphans"
 
 # Deployment successful - disable rollback
