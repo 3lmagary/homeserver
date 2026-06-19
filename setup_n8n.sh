@@ -197,24 +197,20 @@ if [ -z "${EVO_API_KEY:-}" ]; then
     EVO_API_KEY=$(openssl rand -hex 12)
 fi
 
-# Ask pgAdmin installation option
 INSTALL_PGADMIN="n"
-DEFAULT_INSTALL_PGADMIN="n"
-if [ -n "$PGADMIN_EMAIL" ]; then
-    DEFAULT_INSTALL_PGADMIN="y"
-fi
-
-echo -e "\n${YELLOW}Do you want to install pgAdmin? (Database Management UI)${NC}"
-echo "Most users don't need this unless they want to manually inspect the database."
-read -p "Install pgAdmin? (y/N) [Default: $DEFAULT_INSTALL_PGADMIN]: " INSTALL_PGADMIN_INPUT < /dev/tty
-INSTALL_PGADMIN_INPUT=${INSTALL_PGADMIN_INPUT:-$DEFAULT_INSTALL_PGADMIN}
-
-if [[ "$INSTALL_PGADMIN_INPUT" =~ ^[Yy]$ ]]; then
+if [ "$IS_UPDATE" = true ] && [ -n "$PGADMIN_EMAIL" ]; then
     INSTALL_PGADMIN="y"
-    
-    if [ "$IS_UPDATE" = true ] && [ -n "$PGADMIN_EMAIL" ] && [ -n "$PGADMIN_PASS" ]; then
-        echo -e "${GREEN}Using existing pgAdmin credentials from .env${NC}"
-    else
+    echo -e "${GREEN}✓ pgAdmin is already installed. Keeping existing configuration.${NC}"
+else
+    DEFAULT_INSTALL_PGADMIN="n"
+
+    echo -e "\n${YELLOW}Do you want to install pgAdmin? (Database Management UI)${NC}"
+    echo "Most users don't need this unless they want to manually inspect the database."
+    read -p "Install pgAdmin? (y/N) [Default: $DEFAULT_INSTALL_PGADMIN]: " INSTALL_PGADMIN_INPUT < /dev/tty
+    INSTALL_PGADMIN_INPUT=${INSTALL_PGADMIN_INPUT:-$DEFAULT_INSTALL_PGADMIN}
+
+    if [[ "$INSTALL_PGADMIN_INPUT" =~ ^[Yy]$ ]]; then
+        INSTALL_PGADMIN="y"
         DEFAULT_EMAIL=${PGADMIN_EMAIL:-"3lmagary@gmail.com"}
         read -p "Enter an email for pgAdmin Web UI [Default: $DEFAULT_EMAIL]: " PGADMIN_EMAIL_INPUT < /dev/tty
         PGADMIN_EMAIL=${PGADMIN_EMAIL_INPUT:-$DEFAULT_EMAIL}
