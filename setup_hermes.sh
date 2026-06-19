@@ -443,16 +443,16 @@ class Handler(BaseHTTPRequestHandler):
                 command = str(payload["command"])
                 timeout = int(payload.get("timeout", 60))
                 result, ok = pct_exec(vmid, command, timeout=timeout)
-                return self._send(200 if ok else 500, result)
+                return self._send(200, result)
             if self.path == "/pct/start":
                 result, ok = pct_action("start",  int(payload["vmid"]), int(payload.get("timeout", 60)))
-                return self._send(200 if ok else 500, result)
+                return self._send(200, result)
             if self.path == "/pct/stop":
                 result, ok = pct_action("stop",   int(payload["vmid"]), int(payload.get("timeout", 60)))
-                return self._send(200 if ok else 500, result)
+                return self._send(200, result)
             if self.path == "/pct/reboot":
                 result, ok = pct_action("reboot", int(payload["vmid"]), int(payload.get("timeout", 120)))
-                return self._send(200 if ok else 500, result)
+                return self._send(200, result)
             if self.path == "/autoexposer/sync":
                 result, ok = sync_autoexposer()
                 if isinstance(result, tuple):
@@ -460,7 +460,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not ok and isinstance(result, dict) and "error" not in result:
                     result["error"] = "AutoExposer sync failed."
                 result["domain"] = read_cf_domain()
-                return self._send(200 if ok else 500, result)
+                return self._send(200, result)
             self._reject(404, "Not found")
         except KeyError as exc:
             self._reject(400, f"Missing field: {exc}")
@@ -1171,6 +1171,17 @@ def stop_service(vmid: int, service_name: str) -> dict:
         if lock:
             lock.release()
 
+@mcp.tool()
+def sync_autoexposer() -> dict:
+    """Sync the AutoExposer service to update Cloudflare DNS mappings and tunnels.
+    Requires user approval.
+    """
+    try:
+        data = _bridge_request("POST", "/autoexposer/sync", timeout=1200)
+        return data
+    except Exception as e:
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     mcp.run(transport="sse", host="0.0.0.0", port=8380)
 PY_EOF
@@ -1331,6 +1342,8 @@ services:
       PVE_USER: "${PVE_USER}"
       PVE_TOKEN_NAME: "${PVE_TOKEN_NAME}"
       PVE_TOKEN_VALUE: "${PVE_TOKEN_VALUE}"
+      HERMES_HOST_BRIDGE_URL: "${HERMES_HOST_BRIDGE_URL}"
+      HERMES_HOST_BRIDGE_TOKEN: "${HERMES_HOST_BRIDGE_TOKEN}"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8380/sse', timeout=2)"]
       interval: 30s
@@ -1437,6 +1450,7 @@ Inspect and control services **inside** other LXC containers via Proxmox API exe
 | `restart_service(vmid, service_name)` | ✅ Yes | Restart a systemd service |
 | `start_service(vmid, service_name)` | ✅ Yes | Start a stopped systemd service |
 | `stop_service(vmid, service_name)` | ✅ Yes | Stop a systemd service (extra caution) |
+| `sync_autoexposer()` | ✅ Yes | Sync AutoExposer to update DNS/tunnels |
 
 ## 🔍 Container Service Management Rules
 
