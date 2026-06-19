@@ -46,12 +46,6 @@ if [ -n "$EXISTING_CTID" ]; then
     echo -e "${YELLOW}LXC container '$LXC_NAME' already exists (ID: $CTID).${NC}"
     echo -e "${GREEN}Updating configuration and applying any changes...${NC}"
     
-    # Increase memory if it is less than 2048MB to prevent container hangs/OOMs
-    CURRENT_MEM=$(pct config $CTID 2>/dev/null | grep "^memory:" | awk '{print $2}' || echo "0")
-    if [ -n "$CURRENT_MEM" ] && [ "$CURRENT_MEM" -lt 2048 ]; then
-        echo -e "${YELLOW}Increasing container memory allocation to 2048MB (currently: ${CURRENT_MEM}MB)...${NC}"
-        pct set $CTID --memory 2048 --swap 512
-    fi
 
     # Start container if not running
     if ! pct status "$CTID" | grep -q "status: running"; then
