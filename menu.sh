@@ -77,7 +77,7 @@ confirm_repo_update() {
     fi
 
     git fetch origin main -q
-    git checkout "$REMOTE_BRANCH" -- "setup_hermes.sh"
+    git merge "$REMOTE_BRANCH" -q || git checkout "$REMOTE_BRANCH" -- "setup_hermes.sh"
     return 0
 }
 
