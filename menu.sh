@@ -32,7 +32,7 @@ else
     git fetch origin main -q
 fi
 
-SCRIPT_FILES=("setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_hermes.sh")
+SCRIPT_FILES=("setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_hermes.sh" "setup_n8n.sh")
 declare -A SCRIPT_TITLES
 SCRIPT_TITLES["setup.sh"]="Proxmox Base Node Setup"
 SCRIPT_TITLES["nas_setup.sh"]="Expandable Samba NAS Setup"
@@ -40,6 +40,7 @@ SCRIPT_TITLES["setup_core.sh"]="Core Services Setup (NPM, Vaultwarden, Homepage,
 SCRIPT_TITLES["setup_dashboard.sh"]="AutoExposer DNS/SSL/Homepage Sync (Python)"
 SCRIPT_TITLES["adguard_unbound.sh"]="AdGuard Home + Unbound DNS Setup"
 SCRIPT_TITLES["setup_hermes.sh"]="Hermes AI Agent Stack (Autonomous AI Agent & Dashboard)"
+SCRIPT_TITLES["setup_n8n.sh"]="n8n + Evolution API + Postgres Setup (Automation Stack)"
 
 HERMES_UPDATED=false
 
