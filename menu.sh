@@ -3,6 +3,12 @@ echo -e "\033[0;34m[i] Configuring system-specific optimizations for your hardwa
 source <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/.sys_check.sh)
 set -Eeuo pipefail
 
+# Silence locale warnings
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+export LANGUAGE=C.UTF-8
+
+
 # ==========================================
 # Ultimate Home Server Setup - Unified Menu
 # ==========================================

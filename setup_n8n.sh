@@ -2,6 +2,11 @@
 source <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/.sys_check.sh)
 set -Eeuo pipefail
 
+# Silence locale warnings
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+export LANGUAGE=C.UTF-8
+
 # ==========================================
 # n8n + Evolution API + Postgres Setup
 # ==========================================
