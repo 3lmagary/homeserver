@@ -261,11 +261,12 @@ if [ "$IS_UPDATE" = false ]; then
 else
     echo -e "${GREEN}[1/4] Container exists, verifying network and tools...${NC}"
     # Verify Docker is installed inside container
-    if ! pct exec $CTID -- command -v docker &>/dev/null; then
+    if ! pct exec $CTID -- docker --version &>/dev/null; then
         echo -e "${GREEN}Docker not found in existing container. Installing Docker...${NC}"
         pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certificates"
         pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
     fi
+
 fi
 
 
