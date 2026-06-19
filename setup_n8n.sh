@@ -467,6 +467,7 @@ echo -e "   - Login:    ${YELLOW}Create any Email & Password on first visit${NC}
 echo -e ""
 echo -e "${GREEN}▶ Evolution API (WhatsApp) ${NC}"
 echo -e "   - URL:      ${YELLOW}https://evolution_api.${CF_DOMAIN}${NC}"
+echo -e "   - Internal: ${YELLOW}http://evolution_api:8080${NC}  <-- (Use this as Server URL inside n8n)"
 echo -e "   - API KEY:  ${YELLOW}${EVO_API_KEY}${NC}  <-- (SAVE THIS FOR n8n!)"
 echo -e ""
 if [[ "$INSTALL_PGADMIN" =~ ^[Yy]$ ]]; then
