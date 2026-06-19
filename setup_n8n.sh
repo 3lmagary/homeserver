@@ -53,8 +53,12 @@ if [ -n "$EXISTING_CTID" ]; then
         sleep 5
     fi
     
-    # Retrieve IP address of existing container
-    STATIC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+    # Retrieve IP address of existing container from Proxmox configuration directly (much faster)
+    STATIC_IP=$(pct config $CTID 2>/dev/null | grep "^net0:" | sed -n 's/.*ip=\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\).*/\1/p' || true)
+    if [ -z "$STATIC_IP" ]; then
+        STATIC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1 || true)
+    fi
+
     
     # Read existing secrets from container's /opt/n8n/.env
     if pct exec $CTID -- test -f /opt/n8n/.env; then
