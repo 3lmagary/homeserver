@@ -361,6 +361,8 @@ fi)
     depends_on:
       postgres:
         condition: service_healthy
+    labels:
+      - "autoexposer.enable=false"
 
   redis:
     image: redis:7
