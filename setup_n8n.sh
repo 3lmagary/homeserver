@@ -27,14 +27,67 @@ fi
 # Check if already exists
 LXC_NAME="n8n-Server"
 EXISTING_CTID=$(pct list 2>/dev/null | awk -v name="$LXC_NAME" '$3 == name {print $1}' || true)
-if [ -n "$EXISTING_CTID" ]; then
-    echo -e "${RED}Error: LXC '$LXC_NAME' already exists (ID: $EXISTING_CTID). Delete it first if you want to reinstall.${NC}"
-    exit 1
-fi
 
-# Auto-Rollback Settings
+DB_PASS=""
+PGADMIN_EMAIL=""
+PGADMIN_PASS=""
+N8N_ENCRYPTION_KEY=""
+EVO_API_KEY=""
+CF_TOKEN=""
+STATIC_IP=""
+IS_UPDATE=false
 ROLLBACK_REQUIRED=true
 CTID=""
+
+if [ -n "$EXISTING_CTID" ]; then
+    CTID="$EXISTING_CTID"
+    IS_UPDATE=true
+    ROLLBACK_REQUIRED=false  # Do not destroy pre-existing container on failure
+    echo -e "${YELLOW}LXC container '$LXC_NAME' already exists (ID: $CTID).${NC}"
+    echo -e "${GREEN}Updating configuration and applying any changes...${NC}"
+    
+    # Start container if not running
+    if ! pct status "$CTID" | grep -q "status: running"; then
+        echo -e "${YELLOW}Starting container $CTID...${NC}"
+        pct start "$CTID"
+        sleep 5
+    fi
+    
+    # Retrieve IP address of existing container
+    STATIC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+    
+    # Read existing secrets from container's /opt/n8n/.env
+    if pct exec $CTID -- test -f /opt/n8n/.env; then
+        echo -e "${GREEN}Reading existing secrets and settings...${NC}"
+        EXISTING_ENV=$(pct exec $CTID -- cat /opt/n8n/.env)
+        
+        # Use existing secrets if found
+        DB_PASS_EXISTING=$(echo "$EXISTING_ENV" | grep "^POSTGRES_PASSWORD=" | cut -d= -f2- | tr -d '\r')
+        if [ -n "$DB_PASS_EXISTING" ]; then DB_PASS="$DB_PASS_EXISTING"; fi
+        
+        PGADMIN_EMAIL_EXISTING=$(echo "$EXISTING_ENV" | grep "^PGADMIN_DEFAULT_EMAIL=" | cut -d= -f2- | tr -d '\r')
+        if [ -n "$PGADMIN_EMAIL_EXISTING" ]; then PGADMIN_EMAIL="$PGADMIN_EMAIL_EXISTING"; fi
+        
+        PGADMIN_PASS_EXISTING=$(echo "$EXISTING_ENV" | grep "^PGADMIN_DEFAULT_PASSWORD=" | cut -d= -f2- | tr -d '\r')
+        if [ -n "$PGADMIN_PASS_EXISTING" ]; then PGADMIN_PASS="$PGADMIN_PASS_EXISTING"; fi
+        
+        N8N_ENCRYPTION_KEY_EXISTING=$(echo "$EXISTING_ENV" | grep "^N8N_ENCRYPTION_KEY=" | cut -d= -f2- | tr -d '\r')
+        if [ -n "$N8N_ENCRYPTION_KEY_EXISTING" ]; then N8N_ENCRYPTION_KEY="$N8N_ENCRYPTION_KEY_EXISTING"; fi
+        
+        EVO_API_KEY_EXISTING=$(echo "$EXISTING_ENV" | grep "^EVO_API_KEY=" | cut -d= -f2- | tr -d '\r')
+        if [ -n "$EVO_API_KEY_EXISTING" ]; then EVO_API_KEY="$EVO_API_KEY_EXISTING"; fi
+    fi
+    
+    # Read existing Cloudflare Tunnel token from compose file
+    if pct exec $CTID -- test -f /opt/n8n/docker-compose.yml; then
+        EXISTING_COMPOSE=$(pct exec $CTID -- cat /opt/n8n/docker-compose.yml)
+        CF_TOKEN_EXISTING=$(echo "$EXISTING_COMPOSE" | grep -A 10 "cloudflared:" | grep "TUNNEL_TOKEN=" | cut -d= -f2- | tr -d '\r' | head -n 1)
+        if [ -z "$CF_TOKEN_EXISTING" ]; then
+            CF_TOKEN_EXISTING=$(echo "$EXISTING_COMPOSE" | grep -oP 'TUNNEL_TOKEN=\K\S+' || true)
+        fi
+        if [ -n "$CF_TOKEN_EXISTING" ]; then CF_TOKEN="$CF_TOKEN_EXISTING"; fi
+    fi
+fi
 
 cleanup_on_exit() {
     local exit_code=$?
@@ -46,119 +99,174 @@ cleanup_on_exit() {
             pct destroy "$CTID" &>/dev/null || true
             echo -e "${GREEN}Rollback complete. Container deleted.${NC}"
         fi
+    else
+        if [ "$exit_code" -ne 0 ]; then
+            echo -e "\n${RED}Error occurred during update. Existing container was NOT destroyed.${NC}"
+        fi
     fi
 }
 
 trap cleanup_on_exit EXIT ERR
 
-echo -e "${GREEN}[1/4] Preparing LXC Container...${NC}"
-pveam update >/dev/null 2>&1 || true
-TEMPLATE_PATH=$(pveam available -section system | grep debian-12-standard | awk '{print $2}' | head -n 1)
-if [ -z "$TEMPLATE_PATH" ]; then echo -e "${RED}Could not find Debian 12 template.${NC}"; exit 1; fi
-if ! pveam list local | grep -q debian-12; then pveam download local "$TEMPLATE_PATH" >/dev/null 2>&1; fi
-LOCAL_TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -n 1)
+if [ "$IS_UPDATE" = false ]; then
+    echo -e "${GREEN}[1/4] Preparing LXC Container...${NC}"
+    pveam update >/dev/null 2>&1 || true
+    TEMPLATE_PATH=$(pveam available -section system | grep debian-12-standard | awk '{print $2}' | head -n 1)
+    if [ -z "$TEMPLATE_PATH" ]; then echo -e "${RED}Could not find Debian 12 template.${NC}"; exit 1; fi
+    if ! pveam list local | grep -q debian-12; then pveam download local "$TEMPLATE_PATH" >/dev/null 2>&1; fi
+    LOCAL_TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -n 1)
 
-GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
-CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
-if [ -z "$CIDR" ]; then CIDR="24"; fi
+    GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
+    CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
+    if [ -z "$CIDR" ]; then CIDR="24"; fi
 
-echo -ne "\nScanning network to find a free static IP automatically..."
-find_free_ip() {
-    local gw="$1"
-    local base_ip=$(echo "$gw" | cut -d. -f1-3)
-    local assigned_ips
-    assigned_ips=$(grep -r -o -E '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' /etc/pve/lxc/ /etc/pve/qemu-server/ 2>/dev/null | cut -d: -f2 | sort -u || true)
-    local tmp_dir=$(mktemp -d)
-    for i in {50..150}; do
-        local test_ip="${base_ip}.${i}"
-        if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip"; then
-            continue
+    echo -ne "\nScanning network to find a free static IP automatically..."
+    find_free_ip() {
+        local gw="$1"
+        local base_ip=$(echo "$gw" | cut -d. -f1-3)
+        local assigned_ips
+        assigned_ips=$(grep -r -o -E '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' /etc/pve/lxc/ /etc/pve/qemu-server/ 2>/dev/null | cut -d: -f2 | sort -u || true)
+        local tmp_dir=$(mktemp -d)
+        for i in {50..150}; do
+            local test_ip="${base_ip}.${i}"
+            if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip"; then
+                continue
+            fi
+            ( ping -c 1 -W 1 "$test_ip" &>/dev/null && touch "${tmp_dir}/${i}" ) &
+        done
+        sleep 1.2
+        local free_ip=""
+        for i in {50..150}; do
+            local test_ip="${base_ip}.${i}"
+            if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip" || [ -f "${tmp_dir}/${i}" ]; then
+                continue
+            fi
+            if ip neigh show | grep -q -w "$test_ip"; then
+                continue
+            fi
+            free_ip="$test_ip"
+            break
+        done
+        rm -rf "$tmp_dir"
+        if [ -n "$free_ip" ]; then
+            echo "$free_ip"
+            return 0
         fi
-        ( ping -c 1 -W 1 "$test_ip" &>/dev/null && touch "${tmp_dir}/${i}" ) &
-    done
-    sleep 1.2
-    local free_ip=""
-    for i in {50..150}; do
-        local test_ip="${base_ip}.${i}"
-        if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip" || [ -f "${tmp_dir}/${i}" ]; then
-            continue
-        fi
-        if ip neigh show | grep -q -w "$test_ip"; then
-            continue
-        fi
-        free_ip="$test_ip"
-        break
-    done
-    rm -rf "$tmp_dir"
-    if [ -n "$free_ip" ]; then
-        echo "$free_ip"
-        return 0
+        return 1
+    }
+
+    STATIC_IP=$(find_free_ip "$GW")
+    if [ -z "$STATIC_IP" ]; then
+        echo -e "\n${RED}Error: Could not find any free IP address in the subnet automatically.${NC}"
+        exit 1
     fi
-    return 1
-}
-
-STATIC_IP=$(find_free_ip "$GW")
-if [ -z "$STATIC_IP" ]; then
-    echo -e "\n${RED}Error: Could not find any free IP address in the subnet automatically.${NC}"
-    exit 1
+    echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
 fi
-echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
 
-echo -e "${YELLOW}Generating secure internal database password...${NC}"
-DB_PASS=$(openssl rand -hex 12)
+# Retrieve Cloudflare Domain from AutoExposer if configured
+CF_DOMAIN=""
+if [ -f "/opt/homeserver/auto_exposer/.env" ]; then
+    CF_DOMAIN=$(grep -E "^CF_DOMAIN=" /opt/homeserver/auto_exposer/.env | cut -d= -f2- | tr -d '"'\'' ')
+fi
 
-PGADMIN_EMAIL=""
-PGADMIN_PASS=""
+if [ -z "$CF_DOMAIN" ]; then
+    read -p "Enter your Domain Name (e.g. example.com): " CF_DOMAIN_INPUT < /dev/tty
+    CF_DOMAIN=${CF_DOMAIN_INPUT:-"example.com"}
+fi
+
+# Ensure secrets are generated on fresh install
+if [ "$IS_UPDATE" = false ]; then
+    echo -e "${YELLOW}Generating secure internal database password...${NC}"
+    DB_PASS=$(openssl rand -hex 12)
+    
+    N8N_ENCRYPTION_KEY=$(openssl rand -hex 16)
+    EVO_API_KEY=$(openssl rand -hex 12)
+fi
+
+# Ask pgAdmin installation option
+DEFAULT_INSTALL_PGADMIN="n"
+if [ -n "$PGADMIN_EMAIL" ]; then
+    DEFAULT_INSTALL_PGADMIN="y"
+fi
 
 echo -e "\n${YELLOW}Do you want to install pgAdmin? (Database Management UI)${NC}"
 echo "Most users don't need this unless they want to manually inspect the database."
-read -p "Install pgAdmin? (y/N): " INSTALL_PGADMIN < /dev/tty
-if [[ "$INSTALL_PGADMIN" =~ ^[Yy]$ ]]; then
-    read -p "Enter an email for pgAdmin Web UI (e.g. admin@example.com): " PGADMIN_EMAIL < /dev/tty
-    if [ -z "$PGADMIN_EMAIL" ]; then echo -e "${RED}pgAdmin email cannot be empty.${NC}"; exit 1; fi
+read -p "Install pgAdmin? (y/N) [Default: $DEFAULT_INSTALL_PGADMIN]: " INSTALL_PGADMIN_INPUT < /dev/tty
+INSTALL_PGADMIN_INPUT=${INSTALL_PGADMIN_INPUT:-$DEFAULT_INSTALL_PGADMIN}
+
+if [[ "$INSTALL_PGADMIN_INPUT" =~ ^[Yy]$ ]]; then
+    DEFAULT_EMAIL=${PGADMIN_EMAIL:-"3lmagary@gmail.com"}
+    read -p "Enter an email for pgAdmin Web UI [Default: $DEFAULT_EMAIL]: " PGADMIN_EMAIL_INPUT < /dev/tty
+    PGADMIN_EMAIL=${PGADMIN_EMAIL_INPUT:-$DEFAULT_EMAIL}
     
-    read -p "Do you want to auto-generate a secure pgAdmin password? (Y/n): " GEN_PG_PASS < /dev/tty
-    GEN_PG_PASS=${GEN_PG_PASS:-"Y"}
-    
-    if [[ "$GEN_PG_PASS" =~ ^[Yy]$ ]]; then
-        PGADMIN_PASS=$(openssl rand -base64 24)
-        echo -e "${GREEN}✓ Auto-generated pgAdmin Password: ${YELLOW}$PGADMIN_PASS${NC}"
-        echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
-        chmod 600 /root/generated-passwords.txt
+    if [ -z "$PGADMIN_PASS" ]; then
+        read -p "Do you want to auto-generate a secure pgAdmin password? (Y/n): " GEN_PG_PASS < /dev/tty
+        GEN_PG_PASS=${GEN_PG_PASS:-"Y"}
+        
+        if [[ "$GEN_PG_PASS" =~ ^[Yy]$ ]]; then
+            PGADMIN_PASS=$(openssl rand -base64 24)
+            echo -e "${GREEN}✓ Auto-generated pgAdmin Password: ${YELLOW}$PGADMIN_PASS${NC}"
+            echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
+            chmod 600 /root/generated-passwords.txt
+        else
+            read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
+            if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
+        fi
     else
-        read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
-        if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
+        read -p "Do you want to change the existing pgAdmin password? (y/N): " CHANGE_PG_PASS < /dev/tty
+        if [[ "$CHANGE_PG_PASS" =~ ^[Yy]$ ]]; then
+            read -sp "Enter new password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
+            if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
+        fi
+    fi
+else
+    # Clear out email/pass to avoid adding it to environment if disabled during update
+    PGADMIN_EMAIL=""
+    PGADMIN_PASS=""
+fi
+
+# Ask Cloudflare Tunnel token
+if [ -n "$CF_TOKEN" ]; then
+    read -sp "Enter Cloudflare Tunnel Token [Default: Keep Existing Token]: " CF_TOKEN_INPUT < /dev/tty; echo
+    CF_TOKEN=${CF_TOKEN_INPUT:-$CF_TOKEN}
+else
+    read -sp "Enter Cloudflare Tunnel Token (leave blank if you don't use it yet): " CF_TOKEN_INPUT < /dev/tty; echo
+    CF_TOKEN=$CF_TOKEN_INPUT
+fi
+
+if [ "$IS_UPDATE" = false ]; then
+    read -p "Enter Disk Size in GB (default: 30): " DISK_SIZE < /dev/tty
+    if [ -z "$DISK_SIZE" ]; then DISK_SIZE="30"; fi
+
+    NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
+    TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
+    if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
+
+    # Get Next ID
+    CTID=$(pvesh get /cluster/nextid)
+
+    echo "Creating n8n LXC $CTID on $TARGET_STORAGE with ${DISK_SIZE}GB disk..."
+    pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:$DISK_SIZE" --hostname "$LXC_NAME" \
+        --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1,keyctl=1
+    pct set $CTID -onboot 1 --timezone host
+    pct start $CTID
+
+    echo "Waiting for network..."
+    sleep 15
+
+    echo -e "${GREEN}[2/4] Installing Docker...${NC}"
+    pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certificates"
+    pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
+else
+    echo -e "${GREEN}[1/4] Container exists, verifying network and tools...${NC}"
+    # Verify Docker is installed inside container
+    if ! pct exec $CTID -- command -v docker &>/dev/null; then
+        echo -e "${GREEN}Docker not found in existing container. Installing Docker...${NC}"
+        pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certificates"
+        pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
     fi
 fi
 
-read -sp "Enter Cloudflare Tunnel Token (leave blank if you don't use it yet): " CF_TOKEN < /dev/tty; echo
-
-EVO_API_KEY=$(openssl rand -hex 12)
-echo -e "${YELLOW}Auto-generated Evolution API Key: ${EVO_API_KEY}${NC}"
-echo -e "${YELLOW}(Please save this key, you will need it to connect n8n to Evolution API!)${NC}"
-
-read -p "Enter Disk Size in GB (default: 30): " DISK_SIZE < /dev/tty
-if [ -z "$DISK_SIZE" ]; then DISK_SIZE="30"; fi
-
-NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
-TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
-if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
-
-# Get Next ID
-CTID=$(pvesh get /cluster/nextid)
-
-echo "Creating n8n LXC $CTID on $TARGET_STORAGE with ${DISK_SIZE}GB disk..."
-pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:$DISK_SIZE" --hostname "$LXC_NAME" \
-    --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1,keyctl=1
-pct set $CTID -onboot 1 --timezone host
-pct start $CTID
-
-echo "Waiting for network..."
-sleep 15
-
-echo -e "${GREEN}[2/4] Installing Docker...${NC}"
-pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certificates"
-pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
 
 echo -e "${GREEN}[3/4] Writing Docker Compose config...${NC}"
 pct exec $CTID -- mkdir -p /opt/n8n/postgres_init
@@ -168,8 +276,10 @@ pct exec $CTID -- bash -c "cat > /opt/n8n/postgres_init/init-dbs.sql << 'EOF'
 CREATE DATABASE evolution_db;
 EOF"
 
-# Generate random encryption key for n8n
-N8N_ENCRYPTION_KEY=$(openssl rand -hex 16)
+# Generate random encryption key for n8n if not set
+if [ -z "${N8N_ENCRYPTION_KEY:-}" ]; then
+    N8N_ENCRYPTION_KEY=$(openssl rand -hex 16)
+fi
 
 # Write .env file (using tee to avoid special character issues)
 pct exec $CTID -- bash -c "cat > /opt/n8n/.env << 'ENVEOF'
@@ -259,7 +369,7 @@ fi)
     ports:
       - "8081:8080"
     environment:
-      - SERVER_URL=http://${STATIC_IP}:8081
+      - SERVER_URL=https://evolution_api.${CF_DOMAIN}
       - AUTHENTICATION_API_KEY=\${EVO_API_KEY}
       - AUTHENTICATION_TYPE=apikey
       - DATABASE_PROVIDER=postgresql
@@ -326,35 +436,33 @@ pct exec $CTID -- bash -c "cd /opt/n8n && docker compose up -d"
 ROLLBACK_REQUIRED=false
 trap - EXIT ERR
 
+# Run AutoExposer Sync if installed and configured to automatically route the domain
+if [ -d "/opt/homeserver/auto_exposer" ] && [ -f "/opt/homeserver/auto_exposer/venv/bin/python" ]; then
+    echo -e "${GREEN}Running AutoExposer sync to configure Reverse Proxy & SSL DNS...${NC}"
+    (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync) || true
+fi
+
 echo -e "\n${BLUE}================================================================"
 echo -e " ✅ SETUP COMPLETE! TAKE A SCREENSHOT OF THIS BOX "
 echo -e "================================================================${NC}"
 echo -e "${GREEN}▶ n8n (Automation) ${NC}"
-echo -e "   - URL:      ${YELLOW}http://${STATIC_IP}:5678${NC}"
+echo -e "   - URL:      ${YELLOW}https://n8n.${CF_DOMAIN}${NC}"
 echo -e "   - Login:    ${YELLOW}Create any Email & Password on first visit${NC}"
 echo -e ""
 echo -e "${GREEN}▶ Evolution API (WhatsApp) ${NC}"
-echo -e "   - URL:      ${YELLOW}http://${STATIC_IP}:8081${NC}"
+echo -e "   - URL:      ${YELLOW}https://evolution_api.${CF_DOMAIN}${NC}"
 echo -e "   - API KEY:  ${YELLOW}${EVO_API_KEY}${NC}  <-- (SAVE THIS FOR n8n!)"
 echo -e ""
 if [[ "$INSTALL_PGADMIN" =~ ^[Yy]$ ]]; then
 echo -e "${GREEN}▶ pgAdmin (Database Manager) ${NC}"
-echo -e "   - URL:      ${YELLOW}http://${STATIC_IP}:5050${NC}"
+echo -e "   - URL:      ${YELLOW}https://pgadmin.${CF_DOMAIN}${NC}"
 echo -e "   - Email:    ${YELLOW}${PGADMIN_EMAIL}${NC}"
 echo -e "   - Password: ${YELLOW}${PGADMIN_PASS}${NC}"
 echo -e ""
 fi
-echo -e "${GREEN}▶ Proxmox LXC Server (SSH/Console) ${NC}"
-echo -e "   - IP:       ${YELLOW}${STATIC_IP}${NC}"
-echo -e "   - User:     ${YELLOW}root${NC}"
 if [ -n "$CF_TOKEN" ]; then
-echo -e ""
-echo -e "${GREEN}▶ 5. Cloudflare Tunnel ${NC}"
+echo -e "${GREEN}▶ Cloudflare Tunnel ${NC}"
 echo -e "   - Status:   ${YELLOW}Active (Go to Cloudflare dashboard to route your domains)${NC}"
 fi
 echo -e "================================================================"
-echo -e "${YELLOW}Note: The internal Postgres password was auto-generated and saved securely.${NC}"
-echo -e "\n\033[1;32mInfo:\033[0m Telegram integration was intentionally removed for simplicity and privacy."
-echo -e ""
-echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
-echo -e "To access this container's shell, run: \033[0;32mpct enter $CTID\033[0m from your Proxmox host."
+

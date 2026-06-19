@@ -66,11 +66,11 @@ def map_group_name(group_name, svc_name):
     if g_lower in ["media", "downloads"]:
         return "Media & Downloads"
         
-    # 2. Databases & Sync
-    if any(x in name_lower for x in ["couchdb", "postgres", "mysql", "redis", "mongodb", "syncthing", "db", "database"]):
-        return "Databases & Sync"
-    if g_lower in ["sync & backup", "sync", "database", "databases", "automation", "cloud"]:
-        return "Databases & Sync"
+    # 2. Automation & Sync
+    if any(x in name_lower for x in ["couchdb", "syncthing", "n8n"]):
+        return "Automation & Sync"
+    if g_lower in ["sync & backup", "sync", "automation", "cloud"]:
+        return "Automation & Sync"
         
     # 3. Network & Security
     if any(x in name_lower for x in ["nginx", "npm", "adguard", "vaultwarden", "bitwarden", "dns", "proxy"]):
@@ -94,6 +94,11 @@ def update_homepage_config(all_services, ctid):
     for s in all_services:
         # Skip Homepage dashboard itself from being listed to avoid redundancy and remove "Dashboard" section
         if s.name.lower() == "homepage" or s.domain.startswith("homepage."):
+            continue
+
+        # Skip services that do not have a user-facing Web interface (Web UI)
+        name_lower = s.name.lower()
+        if any(x in name_lower for x in ["evolution", "api", "agent", "tunnel", "cloudflared"]):
             continue
 
         g_name = map_group_name(s.group, s.name)
@@ -150,7 +155,7 @@ background:
 layout:
   - System & Management:
   - Network & Security:
-  - Databases & Sync:
+  - Automation & Sync:
   - Media & Downloads:
 
 hideVersion: false
