@@ -46,12 +46,20 @@ if [ -n "$EXISTING_CTID" ]; then
     echo -e "${YELLOW}LXC container '$LXC_NAME' already exists (ID: $CTID).${NC}"
     echo -e "${GREEN}Updating configuration and applying any changes...${NC}"
     
+    # Increase memory if it is less than 2048MB to prevent container hangs/OOMs
+    CURRENT_MEM=$(pct config $CTID 2>/dev/null | grep "^memory:" | awk '{print $2}' || echo "0")
+    if [ -n "$CURRENT_MEM" ] && [ "$CURRENT_MEM" -lt 2048 ]; then
+        echo -e "${YELLOW}Increasing container memory allocation to 2048MB (currently: ${CURRENT_MEM}MB)...${NC}"
+        pct set $CTID --memory 2048 --swap 512
+    fi
+
     # Start container if not running
     if ! pct status "$CTID" | grep -q "status: running"; then
         echo -e "${YELLOW}Starting container $CTID...${NC}"
         pct start "$CTID"
         sleep 5
     fi
+
     
     # Retrieve IP address of existing container from Proxmox configuration directly (much faster)
     STATIC_IP=$(pct config $CTID 2>/dev/null | grep "^net0:" | sed -n 's/.*ip=\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\).*/\1/p' || true)
@@ -248,8 +256,9 @@ if [ "$IS_UPDATE" = false ]; then
 
     echo "Creating n8n LXC $CTID on $TARGET_STORAGE with ${DISK_SIZE}GB disk..."
     pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:$DISK_SIZE" --hostname "$LXC_NAME" \
-        --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1,keyctl=1
+        --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1,keyctl=1 --memory 2048 --swap 512
     pct set $CTID -onboot 1 --timezone host
+
     pct start $CTID
 
     echo "Waiting for network..."
