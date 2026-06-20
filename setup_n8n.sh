@@ -61,8 +61,6 @@ LXC_NAME="n8n-Server"
 EXISTING_CTID=$(pct list 2>/dev/null | awk -v name="$LXC_NAME" '$3 == name {print $1}' || true)
 
 DB_PASS=""
-PGADMIN_EMAIL=""
-PGADMIN_PASS=""
 N8N_ENCRYPTION_KEY=""
 EVO_API_KEY=""
 CF_TOKEN=""
@@ -86,6 +84,17 @@ if [ -n "$EXISTING_CTID" ]; then
         sleep 5
     fi
 
+    # Check and remove pgAdmin container & data if updating
+    if pct exec "$CTID" -- docker ps -a --format '{{.Names}}' | grep -q "^pgadmin$"; then
+        echo -e "${YELLOW}Detected existing pgAdmin container. Removing...${NC}"
+        pct exec "$CTID" -- docker stop pgadmin &>/dev/null || true
+        pct exec "$CTID" -- docker rm pgadmin &>/dev/null || true
+    fi
+    if pct exec "$CTID" -- test -d /opt/n8n/pgadmin_data; then
+        echo -e "${YELLOW}Deleting pgAdmin data directory...${NC}"
+        pct exec "$CTID" -- rm -rf /opt/n8n/pgadmin_data
+    fi
+
     
     # Retrieve IP address of existing container from Proxmox configuration directly (much faster)
     STATIC_IP=$(pct config $CTID 2>/dev/null | grep "^net0:" | sed -n 's/.*ip=\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\).*/\1/p' || true)
@@ -102,12 +111,6 @@ if [ -n "$EXISTING_CTID" ]; then
         # Use existing secrets if found
         DB_PASS_EXISTING=$(echo "$EXISTING_ENV" | grep "^POSTGRES_PASSWORD=" | cut -d= -f2- | tr -d '\r')
         if [ -n "$DB_PASS_EXISTING" ]; then DB_PASS="$DB_PASS_EXISTING"; fi
-        
-        PGADMIN_EMAIL_EXISTING=$(echo "$EXISTING_ENV" | grep "^PGADMIN_DEFAULT_EMAIL=" | cut -d= -f2- | tr -d '\r')
-        if [ -n "$PGADMIN_EMAIL_EXISTING" ]; then PGADMIN_EMAIL="$PGADMIN_EMAIL_EXISTING"; fi
-        
-        PGADMIN_PASS_EXISTING=$(echo "$EXISTING_ENV" | grep "^PGADMIN_DEFAULT_PASSWORD=" | cut -d= -f2- | tr -d '\r')
-        if [ -n "$PGADMIN_PASS_EXISTING" ]; then PGADMIN_PASS="$PGADMIN_PASS_EXISTING"; fi
         
         N8N_ENCRYPTION_KEY_EXISTING=$(echo "$EXISTING_ENV" | grep "^N8N_ENCRYPTION_KEY=" | cut -d= -f2- | tr -d '\r')
         if [ -n "$N8N_ENCRYPTION_KEY_EXISTING" ]; then N8N_ENCRYPTION_KEY="$N8N_ENCRYPTION_KEY_EXISTING"; fi
@@ -224,42 +227,6 @@ if [ -z "${EVO_API_KEY:-}" ]; then
     EVO_API_KEY=$(openssl rand -hex 12)
 fi
 
-INSTALL_PGADMIN="n"
-if [ "$IS_UPDATE" = true ] && [ -n "$PGADMIN_EMAIL" ]; then
-    INSTALL_PGADMIN="y"
-    echo -e "${GREEN}✓ pgAdmin is already installed. Keeping existing configuration.${NC}"
-else
-    DEFAULT_INSTALL_PGADMIN="n"
-
-    echo -e "\n${YELLOW}Do you want to install pgAdmin? (Database Management UI)${NC}"
-    echo "Most users don't need this unless they want to manually inspect the database."
-    read -p "Install pgAdmin? (y/N) [Default: $DEFAULT_INSTALL_PGADMIN]: " INSTALL_PGADMIN_INPUT < /dev/tty
-    INSTALL_PGADMIN_INPUT=${INSTALL_PGADMIN_INPUT:-$DEFAULT_INSTALL_PGADMIN}
-
-    if [[ "$INSTALL_PGADMIN_INPUT" =~ ^[Yy]$ ]]; then
-        INSTALL_PGADMIN="y"
-        DEFAULT_EMAIL=${PGADMIN_EMAIL:-"3lmagary@gmail.com"}
-        read -p "Enter an email for pgAdmin Web UI [Default: $DEFAULT_EMAIL]: " PGADMIN_EMAIL_INPUT < /dev/tty
-        PGADMIN_EMAIL=${PGADMIN_EMAIL_INPUT:-$DEFAULT_EMAIL}
-        
-        if [ -z "$PGADMIN_PASS" ]; then
-            read -p "Do you want to auto-generate a secure pgAdmin password? (Y/n): " GEN_PG_PASS < /dev/tty
-            GEN_PG_PASS=${GEN_PG_PASS:-"Y"}
-            
-            if [[ "$GEN_PG_PASS" =~ ^[Yy]$ ]]; then
-                # Use hex to prevent any interpolation or special character issues
-                PGADMIN_PASS=$(openssl rand -hex 12)
-                echo -e "${GREEN}✓ Auto-generated pgAdmin Password: ${YELLOW}$PGADMIN_PASS${NC}"
-                echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
-                chmod 600 /root/generated-passwords.txt
-            else
-                PGADMIN_PASS=$(read_secret_asterisks "Enter a password for pgAdmin Web UI: ")
-                if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
-            fi
-        fi
-    fi
-fi
-
 # Ask Cloudflare Tunnel token if empty
 if [ -z "$CF_TOKEN" ]; then
     CF_TOKEN=$(read_secret_asterisks "Enter Cloudflare Tunnel Token (leave blank if you don't use it yet): ")
@@ -321,9 +288,6 @@ POSTGRES_USER=n8n_admin
 POSTGRES_PASSWORD=$DB_PASS
 POSTGRES_DB=n8n_db
 
-PGADMIN_DEFAULT_EMAIL=$PGADMIN_EMAIL
-PGADMIN_DEFAULT_PASSWORD=$PGADMIN_PASS
-
 N8N_ENCRYPTION_KEY=$N8N_ENCRYPTION_KEY
 EVO_API_KEY=$EVO_API_KEY
 ENVEOF"
@@ -349,23 +313,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-$(if [[ "$INSTALL_PGADMIN" =~ ^[Yy]$ ]]; then
-echo "  pgadmin:
-    image: dpage/pgadmin4
-    container_name: pgadmin
-    restart: unless-stopped
-    environment:
-      - PGADMIN_DEFAULT_EMAIL=\${PGADMIN_DEFAULT_EMAIL}
-      - PGADMIN_DEFAULT_PASSWORD=\${PGADMIN_DEFAULT_PASSWORD}
-    ports:
-      - \"5050:80\"
-    volumes:
-      - ./pgadmin_data:/var/lib/pgadmin
-    depends_on:
-      postgres:
-        condition: service_healthy"
-fi)
 
   n8n:
     image: docker.n8n.io/n8nio/n8n
@@ -463,11 +410,8 @@ EOF
 fi
 
 echo -e "${GREEN}[4/4] Starting services...${NC}"
-# Fix permissions: n8n runs as UID 1000, pgAdmin runs as UID 5050
+# Fix permissions: n8n runs as UID 1000
 pct exec $CTID -- bash -c "mkdir -p /opt/n8n/n8n_data && chown -R 1000:1000 /opt/n8n/n8n_data"
-if [[ "$INSTALL_PGADMIN" =~ ^[Yy]$ ]]; then
-    pct exec $CTID -- bash -c "mkdir -p /opt/n8n/pgadmin_data && chown -R 5050:5050 /opt/n8n/pgadmin_data"
-fi
 pct exec $CTID -- bash -c "cd /opt/n8n && docker compose up -d --remove-orphans postgres redis"
 echo -e "${YELLOW}Waiting for Postgres to be ready to initialize evolution_db...${NC}"
 sleep 10
@@ -498,13 +442,15 @@ echo -e "   - URL:      ${YELLOW}https://evolution_api.${CF_DOMAIN}${NC}"
 echo -e "   - Internal: ${YELLOW}http://evolution_api:8080${NC}  <-- (Use this as Server URL inside n8n)"
 echo -e "   - API KEY:  ${YELLOW}${EVO_API_KEY}${NC}  <-- (SAVE THIS FOR n8n!)"
 echo -e ""
-if [[ "$INSTALL_PGADMIN" =~ ^[Yy]$ ]]; then
-echo -e "${GREEN}▶ pgAdmin (Database Manager) ${NC}"
-echo -e "   - URL:      ${YELLOW}https://pgadmin.${CF_DOMAIN}${NC}"
-echo -e "   - Email:    ${YELLOW}${PGADMIN_EMAIL}${NC}"
-echo -e "   - Password: ${YELLOW}${PGADMIN_PASS}${NC}"
+echo -e "${GREEN}▶ PostgreSQL Database (Credentials & Info) ${NC}"
+echo -e "   - Host (IP): ${YELLOW}${STATIC_IP}${NC}  (Use ${YELLOW}postgres${NC} internally within Docker network)"
+echo -e "   - Port:      ${YELLOW}5432${NC}"
+echo -e "   - Username:  ${YELLOW}n8n_admin${NC}"
+echo -e "   - Password:  ${YELLOW}${DB_PASS}${NC}"
+echo -e "   - Databases:"
+echo -e "     * n8n DB:          ${YELLOW}n8n_db${NC}"
+echo -e "     * Evolution DB:    ${YELLOW}evolution_db${NC}"
 echo -e ""
-fi
 if [ -n "$CF_TOKEN" ]; then
 echo -e "${GREEN}▶ Cloudflare Tunnel ${NC}"
 echo -e "   - Status:   ${YELLOW}Active (Go to Cloudflare dashboard to route your domains)${NC}"
