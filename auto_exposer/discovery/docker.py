@@ -87,12 +87,16 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
                     icon=labels.get("autoexposer.icon", "docker"),
                     advanced_config=labels.get("autoexposer.advanced_config", ""),
                     lxc_name=lxc_name,
-                    skip_cf=labels.get("autoexposer.skip_cf", "false").lower() == "true"
+                    skip_cf=labels.get("autoexposer.skip_cf", "false").lower() == "true",
+                    skip_npm=labels.get("autoexposer.skip_npm", "false").lower() == "true"
                 ))
             # Known service auto-detection
             elif name in KNOWN_SERVICES:
                 info = KNOWN_SERVICES[name]
                 port = _parse_port(ports, info["port"])
+                skip_cf_val = labels.get("autoexposer.skip_cf", "").lower()
+                skip_cf = skip_cf_val == "true" if skip_cf_val else info.get("skip_cf", False)
+                skip_npm = labels.get("autoexposer.skip_npm", "false").lower() == "true"
                 services.append(DiscoveredService(
                     name=info["name"],
                     domain=f"{name}.{base_domain}",
@@ -102,7 +106,8 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
                     icon=info["icon"],
                     advanced_config=info.get("advanced_config", ""),
                     lxc_name=lxc_name,
-                    skip_cf=info.get("skip_cf", False)
+                    skip_cf=skip_cf,
+                    skip_npm=skip_npm
                 ))
             else:
                 # Unknown container - still add with best-effort
@@ -115,7 +120,9 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
                         port=port,
                         group="Other Services",
                         icon="docker",
-                        lxc_name=lxc_name
+                        lxc_name=lxc_name,
+                        skip_cf=labels.get("autoexposer.skip_cf", "false").lower() == "true",
+                        skip_npm=labels.get("autoexposer.skip_npm", "false").lower() == "true"
                     ))
 
     except subprocess.TimeoutExpired:

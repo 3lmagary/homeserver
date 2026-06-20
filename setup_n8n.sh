@@ -19,6 +19,33 @@ YELLOW="\033[1;33m"
 RED="\033[0;31m"
 NC="\033[0m"
 
+# Helper function to read input with asterisks (*) for visual feedback while hiding the actual secret
+read_secret_asterisks() {
+    local prompt="$1"
+    local secret=""
+    local char
+    echo -n "$prompt" >&2
+    while true; do
+        if ! IFS= read -r -s -n 1 char < /dev/tty; then
+            break
+        fi
+        if [[ -z "$char" || "$char" == $'\n' || "$char" == $'\r' ]]; then
+            break
+        fi
+        if [[ "$char" == $'\177' || "$char" == $'\b' ]]; then
+            if [ ${#secret} -gt 0 ]; then
+                secret="${secret%?}"
+                echo -ne "\b \b" >&2
+            fi
+        else
+            secret+="$char"
+            echo -n "*" >&2
+        fi
+    done
+    echo >&2
+    echo "$secret"
+}
+
 echo -e "${BLUE}=========================================="
 echo -e "  n8n + Evolution API + Postgres Setup"
 echo -e "==========================================${NC}"
@@ -226,7 +253,7 @@ else
                 echo "pgAdmin Password ($PGADMIN_EMAIL): $PGADMIN_PASS" >> /root/generated-passwords.txt
                 chmod 600 /root/generated-passwords.txt
             else
-                read -sp "Enter a password for pgAdmin Web UI: " PGADMIN_PASS < /dev/tty; echo
+                PGADMIN_PASS=$(read_secret_asterisks "Enter a password for pgAdmin Web UI: ")
                 if [ -z "$PGADMIN_PASS" ]; then echo -e "${RED}pgAdmin password cannot be empty.${NC}"; exit 1; fi
             fi
         fi
@@ -235,8 +262,7 @@ fi
 
 # Ask Cloudflare Tunnel token if empty
 if [ -z "$CF_TOKEN" ]; then
-    read -sp "Enter Cloudflare Tunnel Token (leave blank if you don't use it yet): " CF_TOKEN_INPUT < /dev/tty; echo
-    CF_TOKEN=$CF_TOKEN_INPUT
+    CF_TOKEN=$(read_secret_asterisks "Enter Cloudflare Tunnel Token (leave blank if you don't use it yet): ")
 fi
 
 
@@ -354,6 +380,7 @@ fi)
       - DB_POSTGRESDB_PASSWORD=\${POSTGRES_PASSWORD}
       - N8N_ENCRYPTION_KEY=\${N8N_ENCRYPTION_KEY}
       - N8N_SECURE_COOKIE=false
+      - WEBHOOK_URL=https://n8n.${CF_DOMAIN}/
     ports:
       - "5678:5678"
     volumes:
@@ -363,6 +390,7 @@ fi)
         condition: service_healthy
     labels:
       - "autoexposer.skip_cf=true"
+      - "autoexposer.skip_npm=true"
 
   redis:
     image: redis:7

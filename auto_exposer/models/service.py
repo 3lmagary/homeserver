@@ -14,4 +14,5 @@ class DiscoveredService(BaseModel):
     advanced_config: str = ""
     forward_scheme: str = "http"
     skip_cf: bool = False
+    skip_npm: bool = False
 

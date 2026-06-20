@@ -431,7 +431,9 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
 
         # Create NPM Proxy Host only if it doesn't already exist
         if npm:
-            if s.domain in existing_npm_hosts:
+            if s.skip_npm:
+                npm_status = "Skipped (Skip NPM)"
+            elif s.domain in existing_npm_hosts:
                 npm_status = "✓ Exists"
                 host_info = existing_npm_hosts[s.domain]
                 host_id = host_info["id"]
