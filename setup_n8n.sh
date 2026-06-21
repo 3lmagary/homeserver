@@ -52,8 +52,18 @@ echo -e "==========================================${NC}"
 
 # Ensure script is run as root
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${RED}Please run this script as root.${NC}"
-  exit 1
+  if command -v sudo &>/dev/null; then
+    echo -e "\033[1;33mThis script needs root privileges. Re-running with sudo...\033[0m"
+    if [[ "$0" =~ ^(bash|sh|dash)$ || "$0" == "stdin" || -z "$0" ]]; then
+       echo -e "\033[0;31mError: Piped script must be run as root or using: curl -s ... | sudo bash\033[0m"
+       exit 1
+    else
+       exec sudo bash "$0" "$@"
+    fi
+  else
+    echo -e "\033[0;31mError: Please run this script as root (sudo is not installed).\033[0m"
+    exit 1
+  fi
 fi
 
 # Check if already exists
@@ -328,6 +338,8 @@ services:
       - N8N_ENCRYPTION_KEY=\${N8N_ENCRYPTION_KEY}
       - N8N_SECURE_COOKIE=false
       - WEBHOOK_URL=https://n8n.${CF_DOMAIN}/
+      - N8N_TRUST_PROXY=true
+      - N8N_PROXY_HOPS=1
     ports:
       - "5678:5678"
     volumes:
@@ -364,6 +376,7 @@ services:
       - CACHE_REDIS_PREFIX_KEY=evo
       - WEBSOCKET_ENABLED=true
       - LOG_LEVEL=ERROR,WARN,INFO
+      - N8N_ENABLED=true
     volumes:
       - ./evolution_instances:/evolution/instances
       - ./evolution_store:/evolution/store
@@ -372,6 +385,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+
+  evolution-manager:
+    image: evoapicloud/evolution-manager:latest
+    container_name: evolution_manager
+    restart: unless-stopped
+    ports:
+      - "8082:80"
 
   portainer-agent:
     image: portainer/agent:latest
@@ -437,20 +457,17 @@ echo -e "${GREEN}▶ n8n (Automation) ${NC}"
 echo -e "   - URL:          ${YELLOW}https://n8n.${CF_DOMAIN}${NC}"
 echo -e "   - Login:        ${YELLOW}Create any Email & Password on first visit${NC}"
 echo -e ""
-echo -e "${GREEN}▶ Evolution API (WhatsApp) ${NC}"
-echo -e "   - URL:          ${YELLOW}https://evolution_api.${CF_DOMAIN}${NC}"
-echo -e "   - Server URL:   ${YELLOW}http://${STATIC_IP}:8081${NC}"
-echo -e "   - API Key:      ${YELLOW}${EVO_API_KEY}${NC}"
-echo -e "   - Internal (for n8n only):   ${YELLOW}http://evolution_api:8080${NC}"
+echo -e "${GREEN}▶ Evolution Manager (Web Dashboard) ${NC}"
+echo -e "   - Dashboard:    ${YELLOW}https://evolution_manager.${CF_DOMAIN}${NC}"
+echo -e "   - Server URL:   ${YELLOW}https://evolution_api.${CF_DOMAIN}${NC}"
+echo -e "   - API Key: ${YELLOW}${EVO_API_KEY}${NC}"
 echo -e ""
 echo -e "${GREEN}▶ PostgreSQL Database (Credentials & Info) ${NC}"
 echo -e "   - Host (IP):    ${YELLOW}${STATIC_IP}${NC}  (Use ${YELLOW}postgres${NC} internally within Docker network)"
 echo -e "   - Port:         ${YELLOW}5432${NC}"
 echo -e "   - Username:     ${YELLOW}n8n_admin${NC}"
 echo -e "   - Password:     ${YELLOW}${DB_PASS}${NC}"
-echo -e "   - Databases:"
-echo -e "     * n8n DB:       ${YELLOW}n8n_db${NC}"
-echo -e "     * Evolution DB: ${YELLOW}evolution_db${NC}"
+echo -e "   - Databases:    ${YELLOW}n8n_db, evolution_db${NC}"
 echo -e ""
 if [ -n "$CF_TOKEN" ]; then
 echo -e "${GREEN}▶ Cloudflare Tunnel ${NC}"

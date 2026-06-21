@@ -11,9 +11,20 @@ NC="\033[0m"
 echo -e "${BLUE}=========================================="
 echo -e "  Starting AutoExposer Platform"
 echo -e "==========================================${NC}"
-
+# Ensure script is run as root (elevate if possible)
 if [ "$EUID" -ne 0 ]; then
-  echo -e "${YELLOW}Warning: You should probably run this as root on Proxmox.${NC}"
+  if command -v sudo &>/dev/null; then
+    echo -e "\033[1;33mThis script needs root privileges. Re-running with sudo...\033[0m"
+    if [[ "$0" =~ ^(bash|sh|dash)$ || "$0" == "stdin" || -z "$0" ]]; then
+       echo -e "\033[0;31mError: Piped script must be run as root or using: curl -s ... | sudo bash\033[0m"
+       exit 1
+    else
+       exec sudo bash "$0" "$@"
+    fi
+  else
+    echo -e "\033[0;31mError: Please run this script as root (sudo is not installed).\033[0m"
+    exit 1
+  fi
 fi
 
 if ! command -v git &> /dev/null; then

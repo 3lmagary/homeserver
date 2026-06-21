@@ -25,7 +25,11 @@ The **Unified Menu** is now the primary entry point for all operations. It autom
 Run this command on your Proxmox Host to access the full suite of deployment tools:
 
 ```bash
-sudo curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/menu.sh | sudo bash
+# For root user (Default on Proxmox VE):
+curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/menu.sh | bash
+
+# For non-root users:
+curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/menu.sh | sudo bash
 ```
 
 ## 📊 Telemetry and Analytics

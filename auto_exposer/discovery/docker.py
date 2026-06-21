@@ -25,6 +25,8 @@ KNOWN_SERVICES = {
         "name": "Evolution API", "port": 8080, "group": "Automation", "icon": "whatsapp",
         "advanced_config": "location = / {\n    return 301 /manager;\n}"
     },
+    "evolution_manager": {"name": "Evolution Manager", "port": 80, "group": "Automation", "icon": "whatsapp"},
+    "evolution-manager": {"name": "Evolution Manager", "port": 80, "group": "Automation", "icon": "whatsapp"},
     "cosync-frontend": {"name": "CoSync Workspace", "port": 5173, "group": "Sync & Backup", "icon": "✍️"},
     "cosync-backend": {"name": "CoSync API", "port": 4000, "group": "Sync & Backup", "icon": "✍️"},
     "nextcloud": {"name": "Nextcloud", "port": 8080, "group": "Cloud", "icon": "nextcloud"},
