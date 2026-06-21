@@ -59,15 +59,27 @@ if [ -d "/opt/homeserver" ]; then
         sleep 1
         exec bash /opt/homeserver/menu.sh "$@"
     fi
-
-
 else
     git clone https://github.com/3lmagary/homeserver.git /opt/homeserver -q
     cd /opt/homeserver
     git fetch origin main -q
 fi
 
-SCRIPT_FILES=("setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_hermes.sh" "setup_n8n.sh")
+COSYNC_UPDATE_AVAILABLE=""
+EXISTING_CTID=$(pct list 2>/dev/null | awk '$3 == "SyncServer" {print $1}' || true)
+if [ -n "$EXISTING_CTID" ] && pct status "$EXISTING_CTID" 2>/dev/null | grep -q "status: running"; then
+    echo -e "${GREEN}[i] Checking for CoSync updates inside LXC...${NC}"
+    LOCAL_HASH=$(pct exec "$EXISTING_CTID" -- bash -c "cd /opt/cosync && git rev-parse HEAD" 2>/dev/null || true)
+    REMOTE_HASH=$(git ls-remote git@github.com:3lmagary/CoSync.git refs/heads/main 2>/dev/null | awk '{print $1}' || true)
+    if [ -z "$REMOTE_HASH" ]; then
+        REMOTE_HASH=$(git ls-remote https://github.com/3lmagary/CoSync.git refs/heads/main 2>/dev/null | awk '{print $1}' || true)
+    fi
+    if [ -n "$LOCAL_HASH" ] && [ -n "$REMOTE_HASH" ] && [ "$LOCAL_HASH" != "$REMOTE_HASH" ]; then
+        COSYNC_UPDATE_AVAILABLE=" [Update Available]"
+    fi
+fi
+
+SCRIPT_FILES=("setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_hermes.sh" "setup_n8n.sh" "sync_setup.sh")
 declare -A SCRIPT_TITLES
 SCRIPT_TITLES["setup.sh"]="Proxmox Base Node Setup"
 SCRIPT_TITLES["nas_setup.sh"]="Expandable Samba NAS Setup"
@@ -76,6 +88,7 @@ SCRIPT_TITLES["setup_dashboard.sh"]="AutoExposer DNS/SSL/Homepage Sync (Python)"
 SCRIPT_TITLES["adguard_unbound.sh"]="AdGuard Home + Unbound DNS Setup"
 SCRIPT_TITLES["setup_hermes.sh"]="Hermes AI Agent Stack (Autonomous AI Agent & Dashboard)"
 SCRIPT_TITLES["setup_n8n.sh"]="n8n + Evolution API + Postgres Setup (Automation Stack)"
+SCRIPT_TITLES["sync_setup.sh"]="Sync & Collaboration Server (CoSync + Syncthing)"
 
 # Dynamically scan for available scripts
 AVAILABLE_SCRIPTS=()
@@ -102,7 +115,11 @@ trap show_cursor EXIT INT TERM
 options=()
 for script in "${AVAILABLE_SCRIPTS[@]}"; do
     title="${SCRIPT_TITLES[$script]:-$script}"
-    options+=("$title (${BLUE}$script${NC})")
+    if [ "$script" == "sync_setup.sh" ] && [ -n "$COSYNC_UPDATE_AVAILABLE" ]; then
+        options+=("$title (${BLUE}$script${NC})${RED}${COSYNC_UPDATE_AVAILABLE}${NC}")
+    else
+        options+=("$title (${BLUE}$script${NC})")
+    fi
 done
 options+=("${RED}Exit Menu${NC}")
 

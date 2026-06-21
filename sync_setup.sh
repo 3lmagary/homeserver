@@ -25,8 +25,105 @@ fi
 LXC_NAME="SyncServer"
 EXISTING_CTID=$(pct list 2>/dev/null | awk -v name="$LXC_NAME" '$3 == name {print $1}' || true)
 if [ -n "$EXISTING_CTID" ]; then
-    echo -e "${RED}Error: LXC '$LXC_NAME' already exists (ID: $EXISTING_CTID). Delete it first if you want to reinstall.${NC}"
-    exit 1
+    echo -e "${YELLOW}LXC '$LXC_NAME' already exists (ID: $EXISTING_CTID). Entering update/migration phase...${NC}"
+    CTID="$EXISTING_CTID"
+    
+    # Start container if it's not running
+    if ! pct status "$CTID" 2>/dev/null | grep -q "status: running"; then
+        echo -e "${YELLOW}Starting container $CTID...${NC}"
+        pct start "$CTID"
+        sleep 5
+    fi
+    
+    echo -e "${GREEN}Wiping CouchDB services...${NC}"
+    # Stop and remove couchdb container if running
+    pct exec $CTID -- bash -c "docker stop couchdb 2>/dev/null && docker rm couchdb 2>/dev/null || true"
+    pct exec $CTID -- bash -c "rm -rf /opt/sync/couchdb || true"
+    
+    echo -e "${GREEN}Configuring Docker Compose stack for Syncthing & Watchtower...${NC}"
+    pct exec $CTID -- mkdir -p /opt/sync/syncthing
+    pct exec $CTID -- mkdir -p /mnt/sync_data
+    
+    # Create clean docker-compose.yml without couchdb
+    cat << 'EOF' | pct exec $CTID -- tee /opt/sync/docker-compose.yml >/dev/null
+services:
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Africa/Cairo
+    ports:
+      - '8384:8384'
+      - '22000:22000/tcp'
+      - '22000:22000/udp'
+      - '21027:21027/udp'
+    volumes:
+      - ./syncthing/config:/config
+      - /mnt/sync_data:/data1
+    labels:
+      - "autoexposer.enable=true"
+      - "autoexposer.name=Syncthing"
+      - "autoexposer.group=Sync & Backup"
+      - "autoexposer.icon=syncthing"
+      - "autoexposer.port=8384"
+
+  portainer-agent:
+    image: portainer/agent:latest
+    container_name: portainer_agent
+    restart: unless-stopped
+    ports:
+      - 9001:9001
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_LABEL_ENABLE=true
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_SCHEDULE=0 0 12 * * *
+      - DOCKER_API_VERSION=1.40
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+EOF
+
+    echo -e "${GREEN}Starting Syncthing & dependencies...${NC}"
+    pct exec $CTID -- bash -c "cd /opt/sync && docker compose up -d --remove-orphans"
+    
+    echo -e "${GREEN}Installing git and deploying CoSync project...${NC}"
+    pct exec $CTID -- bash -c "apt-get update && apt-get install -y git"
+    
+    pct exec $CTID -- bash -c "
+      if [ -d '/opt/cosync/.git' ]; then
+        echo 'Pulling updates in /opt/cosync...'
+        cd /opt/cosync && git fetch origin && git reset --hard origin/main
+      else
+        echo 'Cloning CoSync repo into /opt/cosync...'
+        rm -rf /opt/cosync
+        git clone https://github.com/3lmagary/CoSync.git /opt/cosync
+      fi
+    "
+    
+    echo -e "${GREEN}Starting CoSync docker-compose stack...${NC}"
+    pct exec $CTID -- bash -c "cd /opt/cosync && docker compose down 2>/dev/null || true && docker compose up -d --build"
+    
+    LXC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+    echo -e "${BLUE}==========================================${NC}"
+    echo -e " 🎉 COSYNC SERVER MIGRATION COMPLETE!"
+    echo -e "${BLUE}==========================================${NC}"
+    echo -e "LXC Container ID : $CTID"
+    echo -e "IP Address       : ${YELLOW}$LXC_IP${NC}"
+    echo -e "CoSync Workspace : ${YELLOW}http://$LXC_IP:5173${NC}"
+    echo -e "CoSync API URL   : ${YELLOW}http://$LXC_IP:4000${NC}"
+    echo -e "Syncthing URL    : ${YELLOW}http://$LXC_IP:8384${NC}"
+    echo -e "${BLUE}==========================================${NC}"
+    exit 0
 fi
 
 # Auto-Rollback Settings
@@ -239,50 +336,12 @@ pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certific
 pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
 
 echo "Configuring Docker Compose stack..."
-pct exec $CTID -- mkdir -p /opt/sync/couchdb
 pct exec $CTID -- mkdir -p /opt/sync/syncthing
 pct exec $CTID -- mkdir -p /mnt/sync_data
-
-# Create CouchDB CORS config restricted for security
-pct exec $CTID -- bash -c "cat << 'EOF' > /opt/sync/couchdb/cors.ini
-[httpd]
-enable_cors = true
-
-[cors]
-origins = app://obsidian.md, capacitor://localhost, http://localhost, http://127.0.0.1
-credentials = true
-methods = GET, PUT, POST, HEAD, DELETE
-headers = accept, authorization, content-type, origin, referer, x-csrf-token
-
-[chttpd]
-max_document_size = 50000000
-EOF"
-
-# Fix CouchDB permissions (UID 5984 is used by CouchDB inside the container)
-pct exec $CTID -- chown -R 5984:5984 /opt/sync/couchdb
 
 # Create docker-compose.yml
 cat << EOF | pct exec $CTID -- tee /opt/sync/docker-compose.yml >/dev/null
 services:
-  couchdb:
-    image: couchdb:latest
-    container_name: couchdb
-    restart: unless-stopped
-    ports:
-      - '5984:5984'
-    environment:
-      - COUCHDB_USER=admin
-      - COUCHDB_PASSWORD=$SYNC_PASS
-    volumes:
-      - ./couchdb/data:/opt/couchdb/data
-      - ./couchdb/cors.ini:/opt/couchdb/etc/local.d/cors.ini:ro
-    labels:
-      - "autoexposer.enable=true"
-      - "autoexposer.name=CouchDB"
-      - "autoexposer.group=Sync & Backup"
-      - "autoexposer.icon=couchdb"
-      - "autoexposer.port=5984"
-
   syncthing:
     image: lscr.io/linuxserver/syncthing:latest
     container_name: syncthing
@@ -332,6 +391,13 @@ EOF
 echo "Starting Docker Compose..."
 pct exec $CTID -- bash -c "cd /opt/sync && docker compose up -d"
 
+echo "Installing git and deploying CoSync project..."
+pct exec $CTID -- bash -c "apt-get update && apt-get install -y git"
+pct exec $CTID -- bash -c "rm -rf /opt/cosync && git clone https://github.com/3lmagary/CoSync.git /opt/cosync"
+
+echo "Starting CoSync docker-compose stack..."
+pct exec $CTID -- bash -c "cd /opt/cosync && docker compose up -d --build"
+
 # Deployment successful - disable rollback
 ROLLBACK_REQUIRED=false
 trap - EXIT ERR
@@ -339,7 +405,7 @@ trap - EXIT ERR
 LXC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
 
 echo -e "${BLUE}=========================================="
-echo -e " 🎉 SYNC SERVER IS READY (Docker Edition)!"
+echo -e " 🎉 SYNC & COSYNC SERVER IS READY!"
 echo -e "==========================================${NC}"
 echo -e "LXC Container ID : $CTID"
 echo -e "IP Address       : ${YELLOW}$LXC_IP${NC}"
@@ -347,7 +413,11 @@ if [ "$USE_EXTRA_DISK" == "yes" ]; then
     echo -e "Storage Bound to : ${YELLOW}/mnt/sync_data${NC} (mapped inside Syncthing to /data1)"
 fi
 echo -e ""
-echo -e "${GREEN}1) Syncthing (Backups & File Sync)${NC}"
+echo -e "${GREEN}1) CoSync Workspace (Browser Docs & Collaboration)${NC}"
+echo -e "URL: ${YELLOW}http://$LXC_IP:5173${NC}"
+echo -e "API: ${YELLOW}http://$LXC_IP:4000${NC}"
+echo -e ""
+echo -e "${GREEN}2) Syncthing (Backups & File Sync)${NC}"
 echo -e "URL: ${YELLOW}http://$LXC_IP:8384${NC}"
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
     echo -e "   -> When adding a folder in Syncthing, set its path to: /data1/YourFolderName"
@@ -355,24 +425,13 @@ else
     echo -e "   -> When adding a folder in Syncthing, set its path to: /data1"
 fi
 echo -e ""
-echo -e "${GREEN}2) CouchDB (Obsidian LiveSync)${NC}"
-echo -e "URL: ${YELLOW}http://$LXC_IP:5984/_utils/${NC}"
-echo -e "Username: admin"
-echo -e "Password: $SYNC_PASS"
-if [[ "$GEN_CHOICE" =~ ^[Yy]$ ]]; then
-echo -e "Note:     ${GREEN}Saved to /root/generated-passwords.txt on host${NC}"
-fi
-echo -e ""
 echo -e "${YELLOW}To configure Obsidian:${NC}"
-echo -e " 1. Install 'Self-hosted LiveSync' plugin."
-echo -e " 2. In plugin settings, enter URI: http://$LXC_IP:5984"
-echo -e " 3. Username: admin / Password: $SYNC_PASS"
-echo -e " 4. Database Name: obsidian"
-echo -e " 5. Click 'Test' and then 'Check Database'. It will create the DB automatically."
+echo -e " 1. Install 'Obsidian CoSync' plugin."
+echo -e " 2. In plugin settings, enter Server URL: http://$LXC_IP:4000"
+echo -e " 3. Enter your Username & Password or Join Link to start collaborating!"
 echo -e "${BLUE}==========================================${NC}"
 echo -e "  [+] Included Portainer Agent & Watchtower"
-echo -e "  [+] Included AutoExposer Labels"
-echo -e "  [+] CouchDB CORS Restricted to Obsidian schema and local origins"
+echo -e "  [+] Included AutoExposer Labels for CoSync and Syncthing"
 echo -e "${BLUE}==========================================${NC}"
 echo -e ""
 echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
