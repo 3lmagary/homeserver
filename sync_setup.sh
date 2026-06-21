@@ -113,15 +113,31 @@ EOF
     echo -e "${GREEN}Starting CoSync docker-compose stack...${NC}"
     pct exec $CTID -- bash -c "cd /opt/cosync && docker compose down 2>/dev/null || true && docker compose up -d --build"
     
+    CF_DOMAIN=""
+    if [ -f "/opt/homeserver/auto_exposer/.env" ]; then
+        CF_DOMAIN=$(grep -E "^CF_DOMAIN=" /opt/homeserver/auto_exposer/.env | cut -d= -f2 | tr -d '\r\n ' || true)
+    fi
+
     LXC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+
+    if [ -n "$CF_DOMAIN" ]; then
+        COSYNC_WORKSPACE_URL="https://cosync.$CF_DOMAIN"
+        COSYNC_API_URL="https://cosync-api.$CF_DOMAIN"
+        SYNCTHING_URL="https://syncthing.$CF_DOMAIN"
+    else
+        COSYNC_WORKSPACE_URL="http://$LXC_IP:5173"
+        COSYNC_API_URL="http://$LXC_IP:4000"
+        SYNCTHING_URL="http://$LXC_IP:8384"
+    fi
+
     echo -e "${BLUE}==========================================${NC}"
     echo -e " 🎉 COSYNC SERVER MIGRATION COMPLETE!"
     echo -e "${BLUE}==========================================${NC}"
     echo -e "LXC Container ID : $CTID"
     echo -e "IP Address       : ${YELLOW}$LXC_IP${NC}"
-    echo -e "CoSync Workspace : ${YELLOW}http://$LXC_IP:5173${NC}"
-    echo -e "CoSync API URL   : ${YELLOW}http://$LXC_IP:4000${NC}"
-    echo -e "Syncthing URL    : ${YELLOW}http://$LXC_IP:8384${NC}"
+    echo -e "CoSync Workspace : ${YELLOW}$COSYNC_WORKSPACE_URL${NC}"
+    echo -e "CoSync API URL   : ${YELLOW}$COSYNC_API_URL${NC}"
+    echo -e "Syncthing URL    : ${YELLOW}$SYNCTHING_URL${NC}"
     echo -e "${BLUE}==========================================${NC}"
     exit 0
 fi
@@ -402,7 +418,22 @@ pct exec $CTID -- bash -c "cd /opt/cosync && docker compose up -d --build"
 ROLLBACK_REQUIRED=false
 trap - EXIT ERR
 
+CF_DOMAIN=""
+if [ -f "/opt/homeserver/auto_exposer/.env" ]; then
+    CF_DOMAIN=$(grep -E "^CF_DOMAIN=" /opt/homeserver/auto_exposer/.env | cut -d= -f2 | tr -d '\r\n ' || true)
+fi
+
 LXC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+
+if [ -n "$CF_DOMAIN" ]; then
+    COSYNC_WORKSPACE_URL="https://cosync.$CF_DOMAIN"
+    COSYNC_API_URL="https://cosync-api.$CF_DOMAIN"
+    SYNCTHING_URL="https://syncthing.$CF_DOMAIN"
+else
+    COSYNC_WORKSPACE_URL="http://$LXC_IP:5173"
+    COSYNC_API_URL="http://$LXC_IP:4000"
+    SYNCTHING_URL="http://$LXC_IP:8384"
+fi
 
 echo -e "${BLUE}=========================================="
 echo -e " 🎉 SYNC & COSYNC SERVER IS READY!"
@@ -414,11 +445,11 @@ if [ "$USE_EXTRA_DISK" == "yes" ]; then
 fi
 echo -e ""
 echo -e "${GREEN}1) CoSync Workspace (Browser Docs & Collaboration)${NC}"
-echo -e "URL: ${YELLOW}http://$LXC_IP:5173${NC}"
-echo -e "API: ${YELLOW}http://$LXC_IP:4000${NC}"
+echo -e "URL: ${YELLOW}$COSYNC_WORKSPACE_URL${NC}"
+echo -e "API: ${YELLOW}$COSYNC_API_URL${NC}"
 echo -e ""
 echo -e "${GREEN}2) Syncthing (Backups & File Sync)${NC}"
-echo -e "URL: ${YELLOW}http://$LXC_IP:8384${NC}"
+echo -e "URL: ${YELLOW}$SYNCTHING_URL${NC}"
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
     echo -e "   -> When adding a folder in Syncthing, set its path to: /data1/YourFolderName"
 else
@@ -427,7 +458,7 @@ fi
 echo -e ""
 echo -e "${YELLOW}To configure Obsidian:${NC}"
 echo -e " 1. Install 'Obsidian CoSync' plugin."
-echo -e " 2. In plugin settings, enter Server URL: http://$LXC_IP:4000"
+echo -e " 2. In plugin settings, enter Server URL: $COSYNC_API_URL"
 echo -e " 3. Enter your Username & Password or Join Link to start collaborating!"
 echo -e "${BLUE}==========================================${NC}"
 echo -e "  [+] Included Portainer Agent & Watchtower"

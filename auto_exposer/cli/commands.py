@@ -67,7 +67,7 @@ def map_group_name(group_name, svc_name):
         return "Media & Downloads"
         
     # 2. Automation & Sync
-    if any(x in name_lower for x in ["couchdb", "syncthing", "n8n", "cosync"]):
+    if any(x in name_lower for x in ["syncthing", "n8n", "cosync"]):
         return "Automation & Sync"
     if g_lower in ["sync & backup", "sync", "automation", "cloud"]:
         return "Automation & Sync"
