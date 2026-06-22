@@ -114,17 +114,11 @@ print(json.dumps(d))
         data_json="{\"uuid\":\"$UUID\",\"os\":\"$safe_os\",\"cpu\":\"$safe_cpu\",\"ram\":\"$RAM\",\"disk\":\"$DISK\",\"script_name\":\"$SCRIPT_NAME\",\"run_id\":\"$RUN_ID\",\"status\":\"$status\",\"exit_code\":$json_ec,\"failed_command\":$json_cmd,\"failed_line\":$json_fl}"
     fi
 
-    # Concurrency lock to prevent overlapping curl requests
-    (
-        exec 9>/tmp/homeserver_telemetry.lock
-        if flock -w "$wait_time" 9; then
-            curl --fail --silent --show-error -o /dev/null -w "%{http_code}" -X POST -m "$wait_time" "$SERVER_URL" \
-                -H "Content-Type: application/json" \
-                -H "X-API-Key: $API_KEY" \
-                -H "User-Agent: HomeserverInstaller/1.0" \
-                -d "$data_json"
-        fi
-    ) >/dev/null 2>&1
+    curl --fail --silent --show-error -o /dev/null -w "%{http_code}" -X POST -m "$wait_time" "$SERVER_URL" \
+        -H "Content-Type: application/json" \
+        -H "X-API-Key: $API_KEY" \
+        -H "User-Agent: HomeserverInstaller/1.0" \
+        -d "$data_json" >/dev/null 2>&1
 }
 
 # 1. Send "started" telemetry in the background (timeout 5s) if not a reload
