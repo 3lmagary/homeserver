@@ -66,6 +66,7 @@ fi
 if [ -n "${HOMESERVER_RUN_ID:-}" ]; then
     RUN_ID="$HOMESERVER_RUN_ID"
     IS_RELOAD=1
+    unset HOMESERVER_RUN_ID
 else
     if [ -f /proc/sys/kernel/random/uuid ]; then
         RUN_ID=$(cat /proc/sys/kernel/random/uuid)
