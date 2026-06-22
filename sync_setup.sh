@@ -14,7 +14,7 @@ RED="\033[0;31m"
 NC="\033[0m"
 
 echo -e "${BLUE}=========================================="
-echo " Proxmox Sync LXC (Syncthing + CouchDB)"
+echo " Proxmox Sync LXC (Syncthing + CoSync)"
 echo -e "==========================================${NC}"
 
 # Ensure script is run as root (elevate if possible)
