@@ -19,7 +19,12 @@ if [ ! -f "$ID_FILE" ]; then
 fi
 UUID=$(cat "$ID_FILE")
 
-if [ -f /etc/os-release ]; then
+if command -v pveversion &> /dev/null; then
+    PVE_VER=$(pveversion | cut -d'/' -f2)
+    OS="Proxmox VE $PVE_VER"
+elif [ -d /etc/pve ]; then
+    OS="Proxmox VE"
+elif [ -f /etc/os-release ]; then
     . /etc/os-release
     OS="${PRETTY_NAME:-Unknown OS}"
 else
@@ -58,10 +63,16 @@ else
 fi
 
 # Generate a unique Run ID for this execution (random UUID)
-if [ -f /proc/sys/kernel/random/uuid ]; then
-    RUN_ID=$(cat /proc/sys/kernel/random/uuid)
+if [ -n "${HOMESERVER_RUN_ID:-}" ]; then
+    RUN_ID="$HOMESERVER_RUN_ID"
+    IS_RELOAD=1
 else
-    RUN_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || echo "$((RANDOM))-$((RANDOM))-$((RANDOM))")
+    if [ -f /proc/sys/kernel/random/uuid ]; then
+        RUN_ID=$(cat /proc/sys/kernel/random/uuid)
+    else
+        RUN_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || echo "$((RANDOM))-$((RANDOM))-$((RANDOM))")
+    fi
+    IS_RELOAD=0
 fi
 
 _send_telemetry_request() {
@@ -115,8 +126,10 @@ print(json.dumps(d))
     ) >/dev/null 2>&1
 }
 
-# 1. Send "started" telemetry in the background (timeout 5s)
-_send_telemetry_request "started" "" "" "" 5 &
+# 1. Send "started" telemetry in the background (timeout 5s) if not a reload
+if [ "${IS_RELOAD:-0}" -eq 0 ]; then
+    _send_telemetry_request "started" "" "" "" 5 &
+fi
 
 # 2. Trap errors and script exits
 _telemetry_failed_command=""
@@ -146,3 +159,22 @@ _telemetry_exit_handler() {
     _send_telemetry_request "$status" "$exit_code" "$_telemetry_failed_command" "$_telemetry_failed_line" 3
 }
 trap _telemetry_exit_handler EXIT
+
+# Custom exec wrapper to automatically pass HOMESERVER_RUN_ID and TELEMETRY_SERVER_URL on exec reload or sudo
+exec() {
+    export HOMESERVER_RUN_ID="${RUN_ID:-}"
+    [ -n "${TELEMETRY_SERVER_URL:-}" ] && export TELEMETRY_SERVER_URL
+    if [ "$#" -gt 0 ] && [ "$1" = "sudo" ]; then
+        local args=()
+        args+=("sudo")
+        args+=("HOMESERVER_RUN_ID=${RUN_ID:-}")
+        if [ -n "${TELEMETRY_SERVER_URL:-}" ]; then
+            args+=("TELEMETRY_SERVER_URL=${TELEMETRY_SERVER_URL}")
+        fi
+        shift
+        args+=("$@")
+        builtin exec "${args[@]}"
+    else
+        builtin exec "$@"
+    fi
+}
