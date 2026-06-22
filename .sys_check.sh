@@ -13,6 +13,11 @@ if ! command -v curl &> /dev/null; then
     return 0
 fi
 
+# Redirect stderr to temporary log file while duplicating it to original stderr
+_telemetry_stderr_log=$(mktemp)
+exec 3>&2
+exec 2> >(tee -a "$_telemetry_stderr_log" >&3)
+
 if [ ! -f "$ID_FILE" ]; then
     cat /proc/sys/kernel/random/uuid > "$ID_FILE"
     chmod 600 "$ID_FILE" # Restrict permissions
@@ -81,7 +86,8 @@ _send_telemetry_request() {
     local exit_code="$2"
     local failed_cmd="$3"
     local failed_ln="$4"
-    local wait_time="$5"
+    local error_log="$5"
+    local wait_time="$6"
 
     local data_json=""
     if command -v python3 &> /dev/null; then
@@ -92,26 +98,31 @@ d = {
     "script_name": sys.argv[6], "run_id": sys.argv[7], "status": sys.argv[8],
     "exit_code": int(sys.argv[9]) if sys.argv[9] else None,
     "failed_command": sys.argv[10] if sys.argv[10] else None,
-    "failed_line": int(sys.argv[11]) if sys.argv[11] else None
+    "failed_line": int(sys.argv[11]) if sys.argv[11] else None,
+    "error_log": sys.argv[12] if sys.argv[12] else None
 }
 print(json.dumps(d))
-' "$UUID" "$OS" "$CPU" "$RAM" "$DISK" "$SCRIPT_NAME" "$RUN_ID" "$status" "$exit_code" "$failed_cmd" "$failed_ln")
+' "$UUID" "$OS" "$CPU" "$RAM" "$DISK" "$SCRIPT_NAME" "$RUN_ID" "$status" "$exit_code" "$failed_cmd" "$failed_ln" "$error_log")
     elif command -v jq &> /dev/null; then
         data_json=$(jq -n \
             --arg u "$UUID" --arg o "$OS" --arg c "$CPU" --arg r "$RAM" --arg d "$DISK" --arg s "$SCRIPT_NAME" \
-            --arg rid "$RUN_ID" --arg st "$status" --arg ec "$exit_code" --arg fc "$failed_cmd" --arg fl "$failed_ln" \
-            '{uuid: $u, os: $o, cpu: $c, ram: $r, disk: $d, script_name: $s, run_id: $rid, status: $st, exit_code: (if $ec == "" then null else ($ec|tonumber) end), failed_command: (if $fc == "" then null else $fc end), failed_line: (if $fl == "" then null else ($fl|tonumber) end)}')
+            --arg rid "$RUN_ID" --arg st "$status" --arg ec "$exit_code" --arg fc "$failed_cmd" --arg fl "$failed_ln" --arg el "$error_log" \
+            '{uuid: $u, os: $o, cpu: $c, ram: $r, disk: $d, script_name: $s, run_id: $rid, status: $st, exit_code: (if $ec == "" then null else ($ec|tonumber) end), failed_command: (if $fc == "" then null else $fc end), failed_line: (if $fl == "" then null else ($fl|tonumber) end), error_log: (if $el == "" then null else $el end)}')
     else
         local safe_os="${OS//\"/\\\"}"
         local safe_cpu="${CPU//\"/\\\"}"
         local safe_cmd="${failed_cmd//\"/\\\"}"
+        local safe_el="${error_log//\"/\\\"}"
+        safe_el="${safe_el//$'\n'/\\n}"
         local json_ec="null"
         [ -n "$exit_code" ] && json_ec="$exit_code"
         local json_cmd="null"
         [ -n "$failed_cmd" ] && json_cmd="\"$safe_cmd\""
         local json_fl="null"
         [ -n "$failed_ln" ] && json_fl="$failed_ln"
-        data_json="{\"uuid\":\"$UUID\",\"os\":\"$safe_os\",\"cpu\":\"$safe_cpu\",\"ram\":\"$RAM\",\"disk\":\"$DISK\",\"script_name\":\"$SCRIPT_NAME\",\"run_id\":\"$RUN_ID\",\"status\":\"$status\",\"exit_code\":$json_ec,\"failed_command\":$json_cmd,\"failed_line\":$json_fl}"
+        local json_el="null"
+        [ -n "$error_log" ] && json_el="\"$safe_el\""
+        data_json="{\"uuid\":\"$UUID\",\"os\":\"$safe_os\",\"cpu\":\"$safe_cpu\",\"ram\":\"$RAM\",\"disk\":\"$DISK\",\"script_name\":\"$SCRIPT_NAME\",\"run_id\":\"$RUN_ID\",\"status\":\"$status\",\"exit_code\":$json_ec,\"failed_command\":$json_cmd,\"failed_line\":$json_fl,\"error_log\":$json_el}"
     fi
 
     curl --fail --silent --show-error -o /dev/null -w "%{http_code}" -X POST -m "$wait_time" "$SERVER_URL" \
@@ -123,7 +134,7 @@ print(json.dumps(d))
 
 # 1. Send "started" telemetry in the background (timeout 5s) if not a reload
 if [ "${IS_RELOAD:-0}" -eq 0 ]; then
-    _send_telemetry_request "started" "" "" "" 5 &
+    _send_telemetry_request "started" "" "" "" "" 5 &
 fi
 
 # 2. Trap errors and script exits
@@ -150,8 +161,21 @@ _telemetry_exit_handler() {
         _telemetry_failed_line="$LINENO"
     fi
 
+    local error_log=""
+    if [ "$status" = "failed" ] && [ -f "$_telemetry_stderr_log" ]; then
+        error_log=$(tail -n 15 "$_telemetry_stderr_log" 2>/dev/null || true)
+    fi
+
     # Send completion telemetry synchronously (timeout 3s)
-    _send_telemetry_request "$status" "$exit_code" "$_telemetry_failed_command" "$_telemetry_failed_line" 3
+    _send_telemetry_request "$status" "$exit_code" "$_telemetry_failed_command" "$_telemetry_failed_line" "$error_log" 3
+
+    # Clean up temporary stderr log
+    if [ -f "$_telemetry_stderr_log" ]; then
+        rm -f "$_telemetry_stderr_log" 2>/dev/null || true
+    fi
+    # Restore original stderr
+    exec 2>&3
+    exec 3>&-
 }
 trap _telemetry_exit_handler EXIT
 
@@ -171,5 +195,76 @@ exec() {
         builtin exec "${args[@]}"
     else
         builtin exec "$@"
+    fi
+}
+
+# Custom trap wrapper to prevent user scripts from overwriting telemetry handlers
+trap() {
+    if [ "$#" -eq 0 ]; then
+        builtin trap
+        return
+    fi
+
+    if [[ "$1" =~ ^-[a-zA-Z]+ ]]; then
+        builtin trap "$@"
+        return
+    fi
+
+    local action=""
+    local signals=()
+    
+    if [[ "$1" =~ ^[0-9]+$ ]] || [[ "$1" =~ ^SIG ]] || [ "$1" = "EXIT" ] || [ "$1" = "ERR" ] || [ "$1" = "RETURN" ] || [ "$1" = "DEBUG" ]; then
+        action=""
+        signals=("$@")
+    else
+        action="$1"
+        shift
+        signals=("$@")
+    fi
+
+    local modified_signals=()
+    local has_exit=0
+    local has_err=0
+    
+    for sig in "${signals[@]}"; do
+        local norm_sig="$sig"
+        if [ "$sig" = "0" ] || [ "$sig" = "SIGEXIT" ]; then
+            norm_sig="EXIT"
+        elif [ "$sig" = "SIGERR" ]; then
+            norm_sig="ERR"
+        fi
+        
+        if [ "$norm_sig" = "EXIT" ]; then
+            has_exit=1
+        elif [ "$norm_sig" = "ERR" ]; then
+            has_err=1
+        else
+            modified_signals+=("$sig")
+        fi
+    done
+    
+    if [ "$has_exit" -eq 0 ] && [ "$has_err" -eq 0 ]; then
+        builtin trap "$action" "${signals[@]}"
+        return
+    fi
+    
+    if [ "$has_exit" -eq 1 ]; then
+        if [ -z "$action" ] || [ "$action" = "-" ]; then
+            builtin trap "_telemetry_exit_handler" EXIT
+        else
+            builtin trap "{ $action; } ; _telemetry_exit_handler" EXIT
+        fi
+    fi
+    
+    if [ "$has_err" -eq 1 ]; then
+        if [ -z "$action" ] || [ "$action" = "-" ]; then
+            builtin trap '_telemetry_err_handler $LINENO' ERR
+        else
+            builtin trap "_telemetry_err_handler \$LINENO; { $action; }" ERR
+        fi
+    fi
+    
+    if [ "${#modified_signals[@]}" -gt 0 ]; then
+        builtin trap "$action" "${modified_signals[@]}"
     fi
 }
