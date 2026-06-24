@@ -119,7 +119,12 @@ hide_cursor() { printf "${ESC}[?25l"; }
 show_cursor() { printf "${ESC}[?25h"; }
 
 # Make sure we restore cursor on exit/interrupt
-trap show_cursor EXIT INT TERM
+cleanup() {
+    show_cursor
+    exit 0
+}
+trap cleanup INT TERM
+trap show_cursor EXIT
 
 # Build the options array
 options=()

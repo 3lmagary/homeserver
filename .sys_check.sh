@@ -152,7 +152,7 @@ _telemetry_exit_handler() {
     trap - EXIT ERR
 
     local status="success"
-    if [ "$exit_code" -ne 0 ]; then
+    if [ "$exit_code" -ne 0 ] && [ "$exit_code" -ne 130 ]; then
         status="failed"
     fi
 
