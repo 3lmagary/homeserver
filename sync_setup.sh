@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 # ==========================================
 # Proxmox Sync & Backup LXC Setup
-# (Syncthing + CouchDB for Obsidian LiveSync)
+# (Syncthing + CoSync)
 # ==========================================
 
 GREEN="\033[0;32m"
@@ -45,11 +45,6 @@ if [ -n "$EXISTING_CTID" ]; then
         pct start "$CTID"
         sleep 5
     fi
-    
-    echo -e "${GREEN}Wiping CouchDB services...${NC}"
-    # Stop and remove couchdb container if running
-    pct exec $CTID -- bash -c "docker stop couchdb 2>/dev/null && docker rm couchdb 2>/dev/null || true"
-    pct exec $CTID -- bash -c "rm -rf /opt/sync/couchdb || true"
     
     echo -e "${GREEN}Configuring Docker Compose stack for Syncthing & Watchtower...${NC}"
     pct exec $CTID -- mkdir -p /opt/sync/syncthing
@@ -268,22 +263,6 @@ if [ "$USE_EXTRA_DISK" == "yes" ]; then
 fi
 
 echo -e "\n${GREEN}[2/4] Preparing LXC Configuration...${NC}"
-
-read -p "Do you want to auto-generate a secure CouchDB/Syncthing Password? (Y/n): " GEN_CHOICE < /dev/tty
-GEN_CHOICE=${GEN_CHOICE:-"Y"}
-
-if [[ "$GEN_CHOICE" =~ ^[Yy]$ ]]; then
-    SYNC_PASS=$(openssl rand -base64 24)
-    echo -e "${GREEN}✓ Auto-generated Password: ${YELLOW}$SYNC_PASS${NC}"
-    echo "CouchDB & Syncthing Admin Password: $SYNC_PASS" >> /root/generated-passwords.txt
-    chmod 600 /root/generated-passwords.txt
-else
-    read -sp "Enter a password for the 'admin' user: " SYNC_PASS < /dev/tty; echo
-    if [ -z "$SYNC_PASS" ]; then
-        echo -e "${RED}Password cannot be empty. Defaulting to 'admin'.${NC}"
-        SYNC_PASS="admin"
-    fi
-fi
 
 # Get Next ID
 CTID=$(pvesh get /cluster/nextid)
