@@ -27,8 +27,8 @@ KNOWN_SERVICES = {
     },
     "evolution_manager": {"name": "Evolution Manager", "port": 80, "group": "Automation", "icon": "whatsapp"},
     "evolution-manager": {"name": "Evolution Manager", "port": 80, "group": "Automation", "icon": "whatsapp"},
-    "cosync-frontend": {"name": "CoSync Workspace", "port": 5173, "group": "Sync & Backup", "icon": "✍️"},
-    "cosync-backend": {"name": "CoSync API", "port": 4000, "group": "Sync & Backup", "icon": "✍️"},
+    "cosync-frontend": {"name": "CoSync Workspace", "port": 5173, "group": "Sync & Backup", "icon": "si-obsidian"},
+    "cosync-backend": {"name": "CoSync API", "port": 4000, "group": "Sync & Backup", "icon": "si-obsidian"},
     "nextcloud": {"name": "Nextcloud", "port": 8080, "group": "Cloud", "icon": "nextcloud"},
 }
 
