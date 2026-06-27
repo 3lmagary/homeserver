@@ -116,6 +116,16 @@ EOF
       fi
     "
     
+    pct exec $CTID -- bash -c "
+      if [ ! -f /opt/cosync/.env ]; then
+        echo 'Generating secure JWT_SECRET in /opt/cosync/.env...'
+        SECRET=\$(openssl rand -hex 32)
+        echo \"JWT_SECRET=\$SECRET\" > /opt/cosync/.env
+        echo \"PORT=4000\" >> /opt/cosync/.env
+        echo \"DATABASE_PATH=/app/data/sync.db\" >> /opt/cosync/.env
+      fi
+    "
+
     echo -e "${GREEN}Starting CoSync docker-compose stack...${NC}"
     pct exec $CTID -- bash -c "cd /opt/cosync && docker compose down 2>/dev/null || true && docker compose up -d --build"
     
@@ -400,6 +410,16 @@ pct exec $CTID -- bash -c "cd /opt/sync && docker compose up -d"
 echo "Installing git and deploying CoSync project..."
 pct exec $CTID -- bash -c "apt-get update && apt-get install -y git"
 pct exec $CTID -- bash -c "rm -rf /opt/cosync && git clone https://github.com/3lmagary/CoSync.git /opt/cosync"
+
+pct exec $CTID -- bash -c "
+  if [ ! -f /opt/cosync/.env ]; then
+    echo 'Generating secure JWT_SECRET in /opt/cosync/.env...'
+    SECRET=\$(openssl rand -hex 32)
+    echo \"JWT_SECRET=\$SECRET\" > /opt/cosync/.env
+    echo \"PORT=4000\" >> /opt/cosync/.env
+    echo \"DATABASE_PATH=/app/data/sync.db\" >> /opt/cosync/.env
+  fi
+"
 
 echo "Starting CoSync docker-compose stack..."
 pct exec $CTID -- bash -c "cd /opt/cosync && docker compose up -d --build"
