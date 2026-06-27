@@ -392,6 +392,7 @@ services:
     restart: unless-stopped
     ports:
       - "8082:80"
+    entrypoint: ["/bin/sh", "-c", "sed -i 's/must-revalidate//g' /etc/nginx/conf.d/nginx.conf && exec /bin/sh /start.sh"]
 
   portainer-agent:
     image: portainer/agent:latest
