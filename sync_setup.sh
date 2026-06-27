@@ -146,6 +146,12 @@ EOF
         SYNCTHING_URL="http://$LXC_IP:8384"
     fi
 
+    # Trigger autoexposer to register in NPM, Cloudflare and Homepage
+    if [ -d "/opt/homeserver/auto_exposer" ]; then
+        echo -e "${GREEN}Triggering AutoExposer to register CoSync & Syncthing...${NC}"
+        (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync) || true
+    fi
+
     echo -e "${BLUE}==========================================${NC}"
     echo -e " 🎉 COSYNC SERVER MIGRATION COMPLETE!"
     echo -e "${BLUE}==========================================${NC}"
@@ -154,12 +160,6 @@ EOF
     echo -e "CoSync Workspace : ${YELLOW}$COSYNC_WORKSPACE_URL${NC}"
     echo -e "CoSync API URL   : ${YELLOW}$COSYNC_API_URL${NC}"
     echo -e "Syncthing URL    : ${YELLOW}$SYNCTHING_URL${NC}"
-    # Trigger autoexposer to register in NPM, Cloudflare and Homepage
-    if [ -d "/opt/homeserver/auto_exposer" ]; then
-        echo -e "${GREEN}Triggering AutoExposer to register CoSync & Syncthing...${NC}"
-        (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync) || true
-    fi
-
     echo -e "${BLUE}==========================================${NC}"
     exit 0
 fi
@@ -451,6 +451,12 @@ else
     SYNCTHING_URL="http://$LXC_IP:8384"
 fi
 
+# Trigger autoexposer to register in NPM, Cloudflare and Homepage
+if [ -d "/opt/homeserver/auto_exposer" ]; then
+    echo -e "${GREEN}Triggering AutoExposer to register CoSync & Syncthing...${NC}"
+    (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync) || true
+fi
+
 echo -e "${BLUE}=========================================="
 echo -e " 🎉 SYNC & COSYNC SERVER IS READY!"
 echo -e "==========================================${NC}"
@@ -480,11 +486,6 @@ echo -e "${BLUE}==========================================${NC}"
 echo -e "  [+] Included Portainer Agent & Watchtower"
 echo -e "  [+] Included AutoExposer Labels for CoSync and Syncthing"
 echo -e "${BLUE}==========================================${NC}"
-# Trigger autoexposer to register in NPM, Cloudflare and Homepage
-if [ -d "/opt/homeserver/auto_exposer" ]; then
-    echo -e "${GREEN}Triggering AutoExposer to register CoSync & Syncthing...${NC}"
-    (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync) || true
-fi
 
 echo -e ""
 echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
