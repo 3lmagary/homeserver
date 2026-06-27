@@ -118,11 +118,18 @@ EOF
     
     pct exec $CTID -- bash -c "
       if [ ! -f /opt/cosync/.env ]; then
-        echo 'Generating secure JWT_SECRET in /opt/cosync/.env...'
+        echo 'Generating secure JWT_SECRET and CONNECTION_CODE in /opt/cosync/.env...'
         SECRET=\$(openssl rand -hex 32)
+        CODE=\$(openssl rand -hex 16)
         echo \"JWT_SECRET=\$SECRET\" > /opt/cosync/.env
+        echo \"CONNECTION_CODE=\$CODE\" >> /opt/cosync/.env
         echo \"PORT=4000\" >> /opt/cosync/.env
         echo \"DATABASE_PATH=/app/data/sync.db\" >> /opt/cosync/.env
+      else
+        if ! grep -q "CONNECTION_CODE" /opt/cosync/.env; then
+          CODE=\$(openssl rand -hex 16)
+          echo \"CONNECTION_CODE=\$CODE\" >> /opt/cosync/.env
+        fi
       fi
     "
 
@@ -152,13 +159,15 @@ EOF
         (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync) || true
     fi
 
+    CONN_CODE=$(pct exec $CTID -- grep "CONNECTION_CODE" /opt/cosync/.env | cut -d= -f2 | tr -d '\r\n ' || true)
+
     echo -e "${BLUE}==========================================${NC}"
     echo -e " 🎉 COSYNC SERVER MIGRATION COMPLETE!"
     echo -e "${BLUE}==========================================${NC}"
     echo -e "LXC Container ID : $CTID"
     echo -e "IP Address       : ${YELLOW}$LXC_IP${NC}"
-    echo -e "CoSync Workspace : ${YELLOW}$COSYNC_WORKSPACE_URL${NC}"
     echo -e "CoSync API URL   : ${YELLOW}$COSYNC_API_URL${NC}"
+    echo -e "Connection Code  : ${GREEN}$CONN_CODE${NC}"
     echo -e "Syncthing URL    : ${YELLOW}$SYNCTHING_URL${NC}"
     echo -e "${BLUE}==========================================${NC}"
     exit 0
@@ -419,11 +428,18 @@ pct exec $CTID -- bash -c "rm -rf /opt/cosync && git clone https://github.com/3l
 
 pct exec $CTID -- bash -c "
   if [ ! -f /opt/cosync/.env ]; then
-    echo 'Generating secure JWT_SECRET in /opt/cosync/.env...'
+    echo 'Generating secure JWT_SECRET and CONNECTION_CODE in /opt/cosync/.env...'
     SECRET=\$(openssl rand -hex 32)
+    CODE=\$(openssl rand -hex 16)
     echo \"JWT_SECRET=\$SECRET\" > /opt/cosync/.env
+    echo \"CONNECTION_CODE=\$CODE\" >> /opt/cosync/.env
     echo \"PORT=4000\" >> /opt/cosync/.env
     echo \"DATABASE_PATH=/app/data/sync.db\" >> /opt/cosync/.env
+  else
+    if ! grep -q "CONNECTION_CODE" /opt/cosync/.env; then
+      CODE=\$(openssl rand -hex 16)
+      echo \"CONNECTION_CODE=\$CODE\" >> /opt/cosync/.env
+    fi
   fi
 "
 
@@ -457,6 +473,8 @@ if [ -d "/opt/homeserver/auto_exposer" ]; then
     (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync) || true
 fi
 
+CONN_CODE=$(pct exec $CTID -- grep "CONNECTION_CODE" /opt/cosync/.env | cut -d= -f2 | tr -d '\r\n ' || true)
+
 echo -e "${BLUE}=========================================="
 echo -e " 🎉 SYNC & COSYNC SERVER IS READY!"
 echo -e "==========================================${NC}"
@@ -466,9 +484,9 @@ if [ "$USE_EXTRA_DISK" == "yes" ]; then
     echo -e "Storage Bound to : ${YELLOW}/mnt/sync_data${NC} (mapped inside Syncthing to /data1)"
 fi
 echo -e ""
-echo -e "${GREEN}1) CoSync Workspace (Browser Docs & Collaboration)${NC}"
-echo -e "URL: ${YELLOW}$COSYNC_WORKSPACE_URL${NC}"
-echo -e "API: ${YELLOW}$COSYNC_API_URL${NC}"
+echo -e "${GREEN}1) CoSync API (Maturity & Headless Sync)${NC}"
+echo -e "Server URL       : ${YELLOW}$COSYNC_API_URL${NC}"
+echo -e "Connection Code  : ${GREEN}$CONN_CODE${NC}"
 echo -e ""
 echo -e "${GREEN}2) Syncthing (Backups & File Sync)${NC}"
 echo -e "URL: ${YELLOW}$SYNCTHING_URL${NC}"
@@ -481,7 +499,8 @@ echo -e ""
 echo -e "${YELLOW}To configure Obsidian:${NC}"
 echo -e " 1. Install 'Obsidian CoSync' plugin."
 echo -e " 2. In plugin settings, enter Server URL: $COSYNC_API_URL"
-echo -e " 3. Enter your Username & Password or Join Link to start collaborating!"
+echo -e " 3. Enter Connection Code: $CONN_CODE"
+echo -e " 4. Enter Device Name (e.g. PC, Phone, Tablet) to show who is editing"
 echo -e "${BLUE}==========================================${NC}"
 echo -e "  [+] Included Portainer Agent & Watchtower"
 echo -e "  [+] Included AutoExposer Labels for CoSync and Syncthing"
