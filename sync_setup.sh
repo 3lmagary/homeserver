@@ -336,10 +336,14 @@ find_free_ip() {
     return 1
 }
 
-STATIC_IP=$(find_free_ip "$GW")
+STATIC_IP=$(find_free_ip "$GW" || true)
 if [ -z "$STATIC_IP" ]; then
-    echo -e "\n${RED}Error: Could not find any free IP address in the subnet automatically.${NC}"
-    exit 1
+    echo -e "\n${YELLOW}Warning: Could not detect a free IP automatically.${NC}"
+    read -p "Please enter a static IP for the container (e.g. 192.168.0.101): " STATIC_IP < /dev/tty
+    if [ -z "$STATIC_IP" ]; then
+        echo -e "${RED}Error: Static IP is required to proceed.${NC}"
+        exit 1
+    fi
 fi
 echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
 NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
