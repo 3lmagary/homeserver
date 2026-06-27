@@ -361,12 +361,12 @@ services:
 
   evolution-api:
     image: evoapicloud/evolution-api:latest
-    container_name: evolution_api
+    container_name: evolution-api
     restart: unless-stopped
     ports:
       - "8081:8080"
     environment:
-      - SERVER_URL=https://evolution_api.${CF_DOMAIN}
+      - SERVER_URL=https://evolution-api.${CF_DOMAIN}
       - AUTHENTICATION_API_KEY=\${EVO_API_KEY}
       - AUTHENTICATION_TYPE=apikey
       - DATABASE_PROVIDER=postgresql
@@ -389,7 +389,7 @@ services:
 
   evolution-manager:
     image: evoapicloud/evolution-manager:latest
-    container_name: evolution_manager
+    container_name: evolution-manager
     restart: unless-stopped
     ports:
       - "8082:80"
@@ -460,8 +460,8 @@ echo -e "   - URL:          ${YELLOW}https://n8n.${CF_DOMAIN}${NC}"
 echo -e "   - Login:        ${YELLOW}Create any Email & Password on first visit${NC}"
 echo -e ""
 echo -e "${GREEN}▶ Evolution Manager (Web Dashboard) ${NC}"
-echo -e "   - Dashboard:    ${YELLOW}https://evolution_manager.${CF_DOMAIN}${NC}"
-echo -e "   - Server URL:   ${YELLOW}https://evolution_api.${CF_DOMAIN}${NC}"
+echo -e "   - Dashboard:    ${YELLOW}https://evolution-manager.${CF_DOMAIN}${NC}"
+echo -e "   - Server URL:   ${YELLOW}https://evolution-api.${CF_DOMAIN}${NC}"
 echo -e "   - API Key: ${YELLOW}${EVO_API_KEY}${NC}"
 echo -e ""
 echo -e "${GREEN}▶ PostgreSQL Database (Credentials & Info) ${NC}"
