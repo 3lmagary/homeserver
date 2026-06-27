@@ -377,6 +377,7 @@ services:
       - WEBSOCKET_ENABLED=true
       - LOG_LEVEL=ERROR,WARN,INFO
       - N8N_ENABLED=true
+      - CORS_ORIGIN="*"
     volumes:
       - ./evolution_instances:/evolution/instances
       - ./evolution_store:/evolution/store
