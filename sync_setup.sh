@@ -144,11 +144,9 @@ EOF
     LXC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
 
     if [ -n "$CF_DOMAIN" ]; then
-        COSYNC_WORKSPACE_URL="https://cosync.$CF_DOMAIN"
         COSYNC_API_URL="https://cosync-api.$CF_DOMAIN"
         SYNCTHING_URL="https://syncthing.$CF_DOMAIN"
     else
-        COSYNC_WORKSPACE_URL="http://$LXC_IP:5173"
         COSYNC_API_URL="http://$LXC_IP:4000"
         SYNCTHING_URL="http://$LXC_IP:8384"
     fi
@@ -458,11 +456,9 @@ fi
 LXC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
 
 if [ -n "$CF_DOMAIN" ]; then
-    COSYNC_WORKSPACE_URL="https://cosync.$CF_DOMAIN"
     COSYNC_API_URL="https://cosync-api.$CF_DOMAIN"
     SYNCTHING_URL="https://syncthing.$CF_DOMAIN"
 else
-    COSYNC_WORKSPACE_URL="http://$LXC_IP:5173"
     COSYNC_API_URL="http://$LXC_IP:4000"
     SYNCTHING_URL="http://$LXC_IP:8384"
 fi
