@@ -151,11 +151,7 @@ EOF
         SYNCTHING_URL="http://$LXC_IP:8384"
     fi
 
-    # Trigger autoexposer to register in NPM, Cloudflare and Homepage
-    if [ -d "/opt/homeserver/auto_exposer" ]; then
-        echo -e "${GREEN}Triggering AutoExposer to register CoSync & Syncthing...${NC}"
-        (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync) || true
-    fi
+
 
     CONN_CODE=$(pct exec $CTID -- grep "CONNECTION_CODE" /opt/cosync/.env | cut -d= -f2 | tr -d '\r\n ' || true)
 
