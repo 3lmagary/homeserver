@@ -353,6 +353,7 @@ services:
     labels:
       - "autoexposer.skip_cf=true"
       - "autoexposer.skip_npm=true"
+      - "com.centurylinklabs.watchtower.enable=true"
 
   redis:
     image: redis:7
@@ -389,6 +390,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
   evolution-manager:
     image: evoapicloud/evolution-manager:latest
@@ -397,6 +400,8 @@ services:
     ports:
       - "8082:80"
     entrypoint: ["/bin/sh", "-c", "sed -i 's/must-revalidate//g' /etc/nginx/conf.d/nginx.conf && exec /bin/sh /start.sh"]
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
   portainer-agent:
     image: portainer/agent:latest
@@ -407,6 +412,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker/volumes:/var/lib/docker/volumes
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
   watchtower:
     image: containrrr/watchtower
@@ -419,6 +426,8 @@ services:
       - DOCKER_API_VERSION=1.40
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 EOF
 
 if [ -n "$CF_TOKEN" ]; then
@@ -431,6 +440,8 @@ cat << EOF | pct exec $CTID -- tee -a /opt/n8n/docker-compose.yml >/dev/null
     command: tunnel run
     environment:
       - TUNNEL_TOKEN=$CF_TOKEN
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 EOF
 fi
 
