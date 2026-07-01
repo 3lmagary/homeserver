@@ -337,7 +337,10 @@ services:
       - DB_POSTGRESDB_PASSWORD=\${POSTGRES_PASSWORD}
       - N8N_ENCRYPTION_KEY=\${N8N_ENCRYPTION_KEY}
       - N8N_SECURE_COOKIE=false
-      - WEBHOOK_URL=https://n8n.${CF_DOMAIN}/
+      - WEBHOOK_URL=https://n8n.${CF_DOMAIN}
+      - N8N_HOST=n8n.${CF_DOMAIN}
+      - N8N_PROTOCOL=https
+      - N8N_EDITOR_BASE_URL=https://n8n.${CF_DOMAIN}
       - N8N_TRUST_PROXY=true
       - N8N_PROXY_HOPS=1
     ports:
