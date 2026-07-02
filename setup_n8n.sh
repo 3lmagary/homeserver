@@ -351,6 +351,7 @@ services:
       postgres:
         condition: service_healthy
     labels:
+      - "autoexposer.skip_cf=true"
       - "com.centurylinklabs.watchtower.enable=true"
 
   redis:
