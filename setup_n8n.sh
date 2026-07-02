@@ -448,12 +448,16 @@ fi
 echo -e "${GREEN}[4/4] Starting services...${NC}"
 # Fix permissions: n8n runs as UID 1000
 pct exec $CTID -- bash -c "mkdir -p /opt/n8n/n8n_data && chown -R 1000:1000 /opt/n8n/n8n_data"
+echo -e "${YELLOW}Pulling required images (with retries)...${NC}"
+pct exec $CTID -- bash -c "cd /opt/n8n && for i in {1..5}; do docker compose pull postgres redis && break || { echo 'Pull failed, retrying in 5s...'; sleep 5; }; done"
 pct exec $CTID -- bash -c "cd /opt/n8n && docker compose up -d --remove-orphans postgres redis"
 echo -e "${YELLOW}Waiting for Postgres to be ready to initialize evolution_db...${NC}"
 sleep 10
 # Ensure evolution_db is created, even if postgres volume already existed from a previous run
 pct exec $CTID -- bash -c "docker exec postgres psql -U n8n_admin -d n8n_db -tc \"SELECT 1 FROM pg_database WHERE datname = 'evolution_db'\" | grep -q 1 || docker exec postgres psql -U n8n_admin -d n8n_db -c \"CREATE DATABASE evolution_db;\""
 
+echo -e "${YELLOW}Pulling remaining images (with retries)...${NC}"
+pct exec $CTID -- bash -c "cd /opt/n8n && for i in {1..5}; do docker compose pull && break || { echo 'Pull failed, retrying in 5s...'; sleep 5; }; done"
 pct exec $CTID -- bash -c "cd /opt/n8n && docker compose up -d --remove-orphans"
 
 # Deployment successful - disable rollback
