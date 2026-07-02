@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 # ==========================================
 # Proxmox Sync & Backup LXC Setup
-# (Syncthing + CoSync)
+# (Syncthing + CoSync + Kopia)
 # ==========================================
 
 GREEN="\033[0;32m"
@@ -14,7 +14,7 @@ RED="\033[0;31m"
 NC="\033[0m"
 
 echo -e "${BLUE}=========================================="
-echo " Proxmox Sync LXC (Syncthing + CoSync)"
+echo " Proxmox Sync LXC (Syncthing + CoSync + Kopia)"
 echo -e "==========================================${NC}"
 
 # Ensure script is run as root (elevate if possible)
@@ -46,12 +46,17 @@ if [ -n "$EXISTING_CTID" ]; then
         sleep 5
     fi
     
-    echo -e "${GREEN}Configuring Docker Compose stack for Syncthing & Watchtower...${NC}"
-    pct exec $CTID -- mkdir -p /opt/sync/syncthing
-    pct exec $CTID -- mkdir -p /mnt/sync_data
+    echo -e "${GREEN}Configuring Docker Compose stack for Syncthing, Kopia & Watchtower...${NC}"
+    pct exec $CTID -- mkdir -p \
+        /opt/sync/configs/syncthing \
+        /opt/sync/configs/kopia/config \
+        /opt/sync/configs/kopia/cache \
+        /opt/sync/configs/kopia/logs \
+        /mnt/vault/syncthing \
+        /mnt/vault/kopia-snapshots
     
-    # Create clean docker-compose.yml without couchdb
-    cat << 'EOF' | pct exec $CTID -- tee /opt/sync/docker-compose.yml >/dev/null
+    # Create clean docker-compose.yml
+    cat << 'EOF' | pct exec $CTID -- tee /opt/sync/docker-compose.yml > /dev/null
 services:
   syncthing:
     image: lscr.io/linuxserver/syncthing:latest
@@ -67,14 +72,46 @@ services:
       - '22000:22000/udp'
       - '21027:21027/udp'
     volumes:
-      - ./syncthing/config:/config
-      - /mnt/sync_data:/data1
+      - /opt/sync/configs/syncthing:/config
+      - /mnt/vault/syncthing:/data
     labels:
       - "autoexposer.enable=true"
       - "autoexposer.name=Syncthing"
       - "autoexposer.group=Sync & Backup"
       - "autoexposer.icon=syncthing"
       - "autoexposer.port=8384"
+
+  kopia:
+    image: kopia/kopia:latest
+    container_name: kopia
+    restart: unless-stopped
+    hostname: kopia-server
+    command:
+      - server
+      - start
+      - --disable-csrf-token-checks
+      - --insecure
+      - --address=0.0.0.0:51515
+      - --server-username=3lmagary
+      - --server-password='O3bVMabqJTfZJ688g59Uj14YO20hvdUbWKcuQUew01cnFY8cdu'
+    ports:
+      - '51515:51515'
+    environment:
+      - KOPIA_PASSWORD='O3bVMabqJTfZJ688g59Uj14YO20hvdUbWKcuQUew01cnFY8cdu'
+      - TZ=Africa/Cairo
+    volumes:
+      - /opt/sync/configs/kopia/config:/app/config
+      - /opt/sync/configs/kopia/cache:/app/cache
+      - /opt/sync/configs/kopia/logs:/app/logs
+      - /mnt/vault/syncthing:/data:ro
+      - /mnt/vault/kopia-snapshots:/repository
+      - /tmp:/tmp:shared
+    labels:
+      - "autoexposer.enable=true"
+      - "autoexposer.name=Kopia"
+      - "autoexposer.group=Sync & Backup"
+      - "autoexposer.icon=kopia"
+      - "autoexposer.port=51515"
 
   portainer-agent:
     image: portainer/agent:latest
@@ -146,23 +183,24 @@ EOF
     if [ -n "$CF_DOMAIN" ]; then
         COSYNC_API_URL="https://cosync-api.$CF_DOMAIN"
         SYNCTHING_URL="https://syncthing.$CF_DOMAIN"
+        KOPIA_URL="https://kopia.$CF_DOMAIN"
     else
         COSYNC_API_URL="http://$LXC_IP:4000"
         SYNCTHING_URL="http://$LXC_IP:8384"
+        KOPIA_URL="http://$LXC_IP:51515"
     fi
-
-
 
     CONN_CODE=$(pct exec $CTID -- grep "CONNECTION_CODE" /opt/cosync/.env | cut -d= -f2 | tr -d '\r\n ' || true)
 
     echo -e "${BLUE}==========================================${NC}"
-    echo -e " 🎉 COSYNC SERVER MIGRATION COMPLETE!"
+    echo -e " 🎉 SYNC SERVER MIGRATION COMPLETE!"
     echo -e "${BLUE}==========================================${NC}"
     echo -e "LXC Container ID : $CTID"
     echo -e "IP Address       : ${YELLOW}$LXC_IP${NC}"
     echo -e "CoSync API URL   : ${YELLOW}$COSYNC_API_URL${NC}"
     echo -e "Connection Code  : ${GREEN}$CONN_CODE${NC}"
     echo -e "Syncthing URL    : ${YELLOW}$SYNCTHING_URL${NC}"
+    echo -e "Kopia Backup UI  : ${YELLOW}$KOPIA_URL${NC}  (admin/admin — change immediately!)"
     echo -e "${BLUE}==========================================${NC}"
     exit 0
 fi
@@ -353,7 +391,7 @@ pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --hostname "$LXC_
 
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
     echo "Binding $MOUNT_DIR to LXC..."
-    pct set $CTID -mp0 "$MOUNT_DIR,mp=/mnt/sync_data"
+    pct set $CTID -mp0 "$MOUNT_DIR,mp=/mnt/vault"
 fi
 
 pct set $CTID -onboot 1
@@ -365,8 +403,13 @@ pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certific
 pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
 
 echo "Configuring Docker Compose stack..."
-pct exec $CTID -- mkdir -p /opt/sync/syncthing
-pct exec $CTID -- mkdir -p /mnt/sync_data
+pct exec $CTID -- mkdir -p \
+    /opt/sync/configs/syncthing \
+    /opt/sync/configs/kopia/config \
+    /opt/sync/configs/kopia/cache \
+    /opt/sync/configs/kopia/logs \
+    /mnt/vault/syncthing \
+    /mnt/vault/kopia-snapshots
 
 # Create docker-compose.yml
 cat << EOF | pct exec $CTID -- tee /opt/sync/docker-compose.yml >/dev/null
@@ -385,14 +428,46 @@ services:
       - '22000:22000/udp'
       - '21027:21027/udp'
     volumes:
-      - ./syncthing/config:/config
-      - /mnt/sync_data:/data1
+      - /opt/sync/configs/syncthing:/config
+      - /mnt/vault/syncthing:/data
     labels:
       - "autoexposer.enable=true"
       - "autoexposer.name=Syncthing"
       - "autoexposer.group=Sync & Backup"
       - "autoexposer.icon=syncthing"
       - "autoexposer.port=8384"
+
+  kopia:
+    image: kopia/kopia:latest
+    container_name: kopia
+    restart: unless-stopped
+    hostname: kopia-server
+    command:
+      - server
+      - start
+      - --disable-csrf-token-checks
+      - --insecure
+      - --address=0.0.0.0:51515
+      - --server-username=admin
+      - --server-password=admin
+    ports:
+      - '51515:51515'
+    environment:
+      - KOPIA_PASSWORD=admin
+      - TZ=Africa/Cairo
+    volumes:
+      - /opt/sync/configs/kopia/config:/app/config
+      - /opt/sync/configs/kopia/cache:/app/cache
+      - /opt/sync/configs/kopia/logs:/app/logs
+      - /mnt/vault/syncthing:/data:ro
+      - /mnt/vault/kopia-snapshots:/repository
+      - /tmp:/tmp:shared
+    labels:
+      - "autoexposer.enable=true"
+      - "autoexposer.name=Kopia"
+      - "autoexposer.group=Sync & Backup"
+      - "autoexposer.icon=kopia"
+      - "autoexposer.port=51515"
 
   portainer-agent:
     image: portainer/agent:latest
@@ -458,9 +533,11 @@ LXC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ 
 if [ -n "$CF_DOMAIN" ]; then
     COSYNC_API_URL="https://cosync-api.$CF_DOMAIN"
     SYNCTHING_URL="https://syncthing.$CF_DOMAIN"
+    KOPIA_URL="https://kopia.$CF_DOMAIN"
 else
     COSYNC_API_URL="http://$LXC_IP:4000"
     SYNCTHING_URL="http://$LXC_IP:8384"
+    KOPIA_URL="http://$LXC_IP:51515"
 fi
 
 # Trigger autoexposer to register in NPM, Cloudflare and Homepage
@@ -471,36 +548,43 @@ fi
 
 CONN_CODE=$(pct exec $CTID -- grep "CONNECTION_CODE" /opt/cosync/.env | cut -d= -f2 | tr -d '\r\n ' || true)
 
-echo -e "${BLUE}=========================================="
-echo -e " 🎉 SYNC & COSYNC SERVER IS READY!"
-echo -e "==========================================${NC}"
+echo -e "${BLUE}================================================================"
+echo -e " 🎉 SYNC & BACKUP SERVER IS READY!"
+echo -e "================================================================${NC}"
 echo -e "LXC Container ID : $CTID"
 echo -e "IP Address       : ${YELLOW}$LXC_IP${NC}"
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
-    echo -e "Storage Bound to : ${YELLOW}/mnt/sync_data${NC} (mapped inside Syncthing to /data1)"
+    echo -e "Storage Layout   :"
+    echo -e "  ${YELLOW}/mnt/vault/syncthing/${NC}        → Syncthing sync folders (use this path in Syncthing UI)"
+    echo -e "  ${YELLOW}/mnt/vault/kopia-snapshots/${NC}  → Kopia backup repository"
 fi
 echo -e ""
-echo -e "${GREEN}1) CoSync API (Maturity & Headless Sync)${NC}"
-echo -e "Server URL       : ${YELLOW}$COSYNC_API_URL${NC}"
-echo -e "Connection Code  : ${GREEN}$CONN_CODE${NC}"
+echo -e "${GREEN}1) CoSync API (Obsidian Headless Sync)${NC}"
+echo -e "   Server URL      : ${YELLOW}$COSYNC_API_URL${NC}"
+echo -e "   Connection Code : ${GREEN}$CONN_CODE${NC}"
 echo -e ""
-echo -e "${GREEN}2) Syncthing (Backups & File Sync)${NC}"
-echo -e "URL: ${YELLOW}$SYNCTHING_URL${NC}"
+echo -e "${GREEN}2) Syncthing (File Sync & Backups)${NC}"
+echo -e "   URL             : ${YELLOW}$SYNCTHING_URL${NC}"
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
-    echo -e "   -> When adding a folder in Syncthing, set its path to: /data1/YourFolderName"
+    echo -e "   -> Add folders in Syncthing UI using path: /data/YourFolderName"
 else
-    echo -e "   -> When adding a folder in Syncthing, set its path to: /data1"
+    echo -e "   -> Add folders in Syncthing UI using path: /data"
 fi
+echo -e ""
+echo -e "${GREEN}3) Kopia (Snapshot & Incremental Backup)${NC}"
+echo -e "   URL             : ${YELLOW}$KOPIA_URL${NC}"
+echo -e "   Repository      : /mnt/vault/kopia-snapshots (inside LXC)"
+echo -e "   Source Data     : /data → points to /mnt/vault/syncthing"
 echo -e ""
 echo -e "${YELLOW}To configure Obsidian:${NC}"
 echo -e " 1. Install 'Obsidian CoSync' plugin."
 echo -e " 2. In plugin settings, enter Server URL: $COSYNC_API_URL"
 echo -e " 3. Enter Connection Code: $CONN_CODE"
 echo -e " 4. Enter Device Name (e.g. PC, Phone, Tablet) to show who is editing"
-echo -e "${BLUE}==========================================${NC}"
-echo -e "  [+] Included Portainer Agent & Watchtower"
-echo -e "  [+] Included AutoExposer Labels for CoSync and Syncthing"
-echo -e "${BLUE}==========================================${NC}"
+echo -e "${BLUE}================================================================${NC}"
+echo -e "  [+] Syncthing + CoSync + Kopia + Portainer Agent + Watchtower"
+echo -e "  [+] AutoExposer Labels configured for all services"
+echo -e "${BLUE}================================================================${NC}"
 
 echo -e ""
 echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."

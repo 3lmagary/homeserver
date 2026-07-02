@@ -98,7 +98,7 @@ SCRIPT_TITLES["setup_dashboard.sh"]="AutoExposer DNS/SSL/Homepage Sync (Python)"
 SCRIPT_TITLES["adguard_unbound.sh"]="AdGuard Home + Unbound DNS Setup"
 SCRIPT_TITLES["setup_hermes.sh"]="Hermes AI Agent Stack (Autonomous AI Agent & Dashboard)"
 SCRIPT_TITLES["setup_n8n.sh"]="n8n + Evolution API + Postgres Setup (Automation Stack)"
-SCRIPT_TITLES["sync_setup.sh"]="Sync & Collaboration Server (CoSync + Syncthing)"
+SCRIPT_TITLES["sync_setup.sh"]="Sync & Backup Server (CoSync + Syncthing + Kopia)"
 
 # Dynamically scan for available scripts
 AVAILABLE_SCRIPTS=()
