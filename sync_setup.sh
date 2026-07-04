@@ -112,6 +112,7 @@ services:
       - "autoexposer.group=Sync & Backup"
       - "autoexposer.icon=kopia"
       - "autoexposer.port=51515"
+      - "autoexposer.advanced_config=location /kopia.RepositoryServer/ { grpc_pass grpc://\$\$server:\$\$port; }"
 
   portainer-agent:
     image: portainer/agent:latest
@@ -136,8 +137,36 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 EOF
 
+    # Fix TLS/DNS/MTU issues inside LXC: configure Docker daemon
+    pct exec $CTID -- bash -c 'mkdir -p /etc/docker && cat > /etc/docker/daemon.json <<DAEMON
+{
+  "dns": ["1.1.1.1", "8.8.8.8", "8.8.4.4"],
+  "mtu": 1450,
+  "max-concurrent-downloads": 1,
+  "max-download-attempts": 5
+}
+DAEMON
+systemctl restart docker && sleep 5'
+
     echo -e "${GREEN}Starting Syncthing & dependencies...${NC}"
-    pct exec $CTID -- bash -c "cd /opt/sync && docker compose up -d --remove-orphans"
+    pct exec $CTID -- bash -c '
+      cd /opt/sync
+      MAX_RETRIES=5
+      for attempt in $(seq 1 $MAX_RETRIES); do
+        echo "[Pull attempt $attempt/$MAX_RETRIES]"
+        if docker compose pull; then
+          echo "All images pulled successfully."
+          break
+        fi
+        if [ $attempt -eq $MAX_RETRIES ]; then
+          echo "WARNING: Some images failed to pull after $MAX_RETRIES attempts. Starting anyway..."
+        else
+          echo "Retrying in 15 seconds..."
+          sleep 15
+        fi
+      done
+      docker compose up -d --remove-orphans
+    '
     
     echo -e "${GREEN}Installing git and deploying CoSync project...${NC}"
     pct exec $CTID -- bash -c "apt-get update && apt-get install -y git"
@@ -380,13 +409,18 @@ if [ -z "$STATIC_IP" ]; then
     fi
 fi
 echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
-NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
+NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW},mtu=1450"
 
 TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n 1)
 if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
 
-echo -e "${GREEN}[3/4] Creating LXC Container $CTID...${NC}"
-pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --hostname "$LXC_NAME" --net0 $NET_CONFIG \
+# Disk size selection - defaults to 20GB for sufficient space for system + configs + local backups
+read -p "Enter Disk Size in GB for Sync LXC (default: 20): " DISK_SIZE </dev/tty
+if [ -z "$DISK_SIZE" ]; then DISK_SIZE="20"; fi
+if ! [[ "$DISK_SIZE" =~ ^[0-9]+$ ]]; then echo -e "${RED}Disk size must be a number.${NC}"; exit 1; fi
+
+echo -e "${GREEN}[3/4] Creating LXC Container $CTID with ${DISK_SIZE}GB disk...${NC}"
+pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:${DISK_SIZE}" --hostname "$LXC_NAME" --net0 $NET_CONFIG \
     --unprivileged 1 --features nesting=1,keyctl=1
 
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
@@ -402,6 +436,17 @@ echo -e "${GREEN}[4/4] Installing Docker and Services...${NC}"
 pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certificates"
 pct exec $CTID -- bash -c "curl -fsSL https://get.docker.com | sh"
 
+# Fix TLS/DNS/MTU issues inside LXC: configure Docker daemon
+pct exec $CTID -- bash -c 'mkdir -p /etc/docker && cat > /etc/docker/daemon.json <<DAEMON
+{
+  "dns": ["1.1.1.1", "8.8.8.8", "8.8.4.4"],
+  "mtu": 1450,
+  "max-concurrent-downloads": 1,
+  "max-download-attempts": 5
+}
+DAEMON
+systemctl restart docker && sleep 5'
+
 echo "Configuring Docker Compose stack..."
 pct exec $CTID -- mkdir -p \
     /opt/sync/configs/syncthing \
@@ -412,7 +457,7 @@ pct exec $CTID -- mkdir -p \
     /mnt/vault/kopia-snapshots
 
 # Create docker-compose.yml
-cat << EOF | pct exec $CTID -- tee /opt/sync/docker-compose.yml >/dev/null
+cat << 'EOF' | pct exec $CTID -- tee /opt/sync/docker-compose.yml >/dev/null
 services:
   syncthing:
     image: lscr.io/linuxserver/syncthing:latest
@@ -468,6 +513,7 @@ services:
       - "autoexposer.group=Sync & Backup"
       - "autoexposer.icon=kopia"
       - "autoexposer.port=51515"
+      - "autoexposer.advanced_config=location /kopia.RepositoryServer/ { grpc_pass grpc://\$\$server:\$\$port; }"
 
   portainer-agent:
     image: portainer/agent:latest
@@ -493,7 +539,25 @@ services:
 EOF
 
 echo "Starting Docker Compose..."
-pct exec $CTID -- bash -c "cd /opt/sync && docker compose up -d"
+# Pull images with retry
+pct exec $CTID -- bash -c '
+  cd /opt/sync
+  MAX_RETRIES=5
+  for attempt in $(seq 1 $MAX_RETRIES); do
+    echo "[Pull attempt $attempt/$MAX_RETRIES]"
+    if docker compose pull; then
+      echo "All images pulled successfully."
+      break
+    fi
+    if [ $attempt -eq $MAX_RETRIES ]; then
+      echo "WARNING: Some images failed to pull after $MAX_RETRIES attempts. Starting anyway..."
+    else
+      echo "Retrying in 15 seconds..."
+      sleep 15
+    fi
+  done
+  docker compose up -d
+'
 
 echo "Installing git and deploying CoSync project..."
 pct exec $CTID -- bash -c "apt-get update && apt-get install -y git"
