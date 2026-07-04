@@ -112,7 +112,7 @@ services:
       - "autoexposer.group=Sync & Backup"
       - "autoexposer.icon=kopia"
       - "autoexposer.port=51515"
-      - "autoexposer.advanced_config=location /kopia.RepositoryServer/ { grpc_pass grpc://\$\$server:\$\$port; }"
+      - "autoexposer.advanced_config=location /kopia.RepositoryServer/ { grpc_pass grpc://$$server:$$port; }"
 
   portainer-agent:
     image: portainer/agent:latest
@@ -513,7 +513,7 @@ services:
       - "autoexposer.group=Sync & Backup"
       - "autoexposer.icon=kopia"
       - "autoexposer.port=51515"
-      - "autoexposer.advanced_config=location /kopia.RepositoryServer/ { grpc_pass grpc://\$\$server:\$\$port; }"
+      - "autoexposer.advanced_config=location /kopia.RepositoryServer/ { grpc_pass grpc://$$server:$$port; }"
 
   portainer-agent:
     image: portainer/agent:latest
