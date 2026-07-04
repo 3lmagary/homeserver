@@ -47,6 +47,28 @@ if [ -n "$EXISTING_CTID" ]; then
     fi
     
     echo -e "${GREEN}Configuring Docker Compose stack for Syncthing, Kopia & Watchtower...${NC}"
+    
+    # Extract existing Kopia credentials if available
+    EXISTING_USER=$(pct exec $CTID -- grep "\--server-username=" /opt/sync/docker-compose.yml 2>/dev/null | cut -d= -f2 | tr -d '\r\n ' || true)
+    EXISTING_PASS=$(pct exec $CTID -- grep "KOPIA_PASSWORD=" /opt/sync/docker-compose.yml 2>/dev/null | cut -d= -f2 | tr -d '\r\n\x27" ' || true)
+    
+    if [ -z "$EXISTING_USER" ]; then EXISTING_USER="admin"; fi
+    if [ -z "$EXISTING_PASS" ]; then EXISTING_PASS="admin"; fi
+    
+    echo -e "${GREEN}Checking Kopia credentials...${NC}"
+    read -p "Do you want to update Kopia credentials? (y/N): " CHANGE_CREDS </dev/tty
+    if [[ "$CHANGE_CREDS" =~ ^[Yy]$ ]]; then
+        read -p "Enter new Username for Kopia [default: $EXISTING_USER]: " KOPIA_USER </dev/tty
+        if [ -z "$KOPIA_USER" ]; then KOPIA_USER="$EXISTING_USER"; fi
+        read -p "Enter new Password for Kopia: " KOPIA_PASS </dev/tty
+        while [ -z "$KOPIA_PASS" ]; do
+            read -p "Password cannot be empty. Enter new Password for Kopia: " KOPIA_PASS </dev/tty
+        done
+    else
+        KOPIA_USER="$EXISTING_USER"
+        KOPIA_PASS="$EXISTING_PASS"
+    fi
+
     pct exec $CTID -- mkdir -p \
         /opt/sync/configs/syncthing \
         /opt/sync/configs/kopia/config \
@@ -92,12 +114,12 @@ services:
       - --disable-csrf-token-checks
       - --insecure
       - --address=0.0.0.0:51515
-      - --server-username=3lmagary
-      - --server-password='O3bVMabqJTfZJ688g59Uj14YO20hvdUbWKcuQUew01cnFY8cdu'
+      - --server-username=__KOPIA_USER__
+      - --server-password=__KOPIA_PASS__
     ports:
       - '51515:51515'
     environment:
-      - KOPIA_PASSWORD='O3bVMabqJTfZJ688g59Uj14YO20hvdUbWKcuQUew01cnFY8cdu'
+      - KOPIA_PASSWORD=__KOPIA_PASS__
       - TZ=Africa/Cairo
     volumes:
       - /opt/sync/configs/kopia/config:/app/config
@@ -112,7 +134,7 @@ services:
       - "autoexposer.group=Sync & Backup"
       - "autoexposer.icon=kopia"
       - "autoexposer.port=51515"
-      - "autoexposer.advanced_config=location ~ / { client_max_body_size 0; if ($$http_content_type ~* \"application/grpc\") { grpc_pass grpc://$$server:$$port; } proxy_pass http://$$server:$$port; }"
+      - "autoexposer.advanced_config=location ~ / { client_max_body_size 0; if ($$http_content_type ~* \"application/grpc\") { grpc_pass grpc://__LXC_IP__:51515; } proxy_pass http://__LXC_IP__:51515; }"
 
   portainer-agent:
     image: portainer/agent:latest
@@ -136,6 +158,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 EOF
+
+    # Replace placeholders with actual values
+    pct exec $CTID -- sed -i "s|__LXC_IP__|$LXC_IP|g" /opt/sync/docker-compose.yml
+    pct exec $CTID -- sed -i "s|__KOPIA_USER__|$KOPIA_USER|g" /opt/sync/docker-compose.yml
+    pct exec $CTID -- sed -i "s|__KOPIA_PASS__|$KOPIA_PASS|g" /opt/sync/docker-compose.yml
 
     # Fix TLS/DNS/MTU issues inside LXC: configure Docker daemon
     pct exec $CTID -- bash -c 'mkdir -p /etc/docker && cat > /etc/docker/daemon.json <<DAEMON
@@ -235,7 +262,19 @@ systemctl restart docker && sleep 5'
     echo -e "CoSync API URL   : ${YELLOW}$COSYNC_API_URL${NC}"
     echo -e "Connection Code  : ${GREEN}$CONN_CODE${NC}"
     echo -e "Syncthing URL    : ${YELLOW}$SYNCTHING_URL${NC}"
-    echo -e "Kopia Backup UI  : ${YELLOW}$KOPIA_URL${NC}  (admin/admin — change immediately!)"
+    echo -e ""
+    echo -e "${GREEN}Kopia Backup Server (Credentials & Connection):${NC}"
+    echo -e "  Web UI URL       : ${YELLOW}$KOPIA_URL${NC}"
+    echo -e "  Username         : ${GREEN}$KOPIA_USER${NC}"
+    echo -e "  Password         : ${GREEN}$KOPIA_PASS${NC}"
+    echo -e ""
+    echo -e "  ${BOLD}How to connect Kopia Client (App/CLI) to this Server:${NC}"
+    echo -e "  - ${BOLD}Remote/Secure Connection:${NC}"
+    echo -e "    Use Server URL : ${YELLOW}https://kopia.3lmagary.com:443${NC}"
+    echo -e "    (This connects via HTTPS on port 443. Nginx Proxy Manager handles the SSL"
+    echo -e "     and forwards the gRPC traffic directly to Kopia on port 51515)."
+    echo -e "  - ${BOLD}Local Connection (Inside home network only):${NC}"
+    echo -e "    Use Server URL : ${YELLOW}http://$LXC_IP:51515${NC}"
     echo -e "${BLUE}==========================================${NC}"
     exit 0
 fi
@@ -425,6 +464,15 @@ read -p "Enter Disk Size in GB for Sync LXC (default: 20): " DISK_SIZE </dev/tty
 if [ -z "$DISK_SIZE" ]; then DISK_SIZE="20"; fi
 if ! [[ "$DISK_SIZE" =~ ^[0-9]+$ ]]; then echo -e "${RED}Disk size must be a number.${NC}"; exit 1; fi
 
+# Prompt for Kopia credentials
+read -p "Enter Username for Kopia backup server [default: admin]: " KOPIA_USER </dev/tty
+if [ -z "$KOPIA_USER" ]; then KOPIA_USER="admin"; fi
+
+read -p "Enter Password for Kopia backup server: " KOPIA_PASS </dev/tty
+while [ -z "$KOPIA_PASS" ]; do
+    read -p "Password cannot be empty. Enter Password for Kopia: " KOPIA_PASS </dev/tty
+done
+
 echo -e "${GREEN}[3/4] Creating LXC Container $CTID with ${DISK_SIZE}GB disk...${NC}"
 pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:${DISK_SIZE}" --hostname "$LXC_NAME" --net0 $NET_CONFIG \
     --unprivileged 1 --features nesting=1,keyctl=1
@@ -499,12 +547,12 @@ services:
       - --disable-csrf-token-checks
       - --insecure
       - --address=0.0.0.0:51515
-      - --server-username=admin
-      - --server-password=admin
+      - --server-username=__KOPIA_USER__
+      - --server-password=__KOPIA_PASS__
     ports:
       - '51515:51515'
     environment:
-      - KOPIA_PASSWORD=admin
+      - KOPIA_PASSWORD=__KOPIA_PASS__
       - TZ=Africa/Cairo
     volumes:
       - /opt/sync/configs/kopia/config:/app/config
@@ -519,7 +567,7 @@ services:
       - "autoexposer.group=Sync & Backup"
       - "autoexposer.icon=kopia"
       - "autoexposer.port=51515"
-      - "autoexposer.advanced_config=location ~ / { client_max_body_size 0; if ($$http_content_type ~* \"application/grpc\") { grpc_pass grpc://$$server:$$port; } proxy_pass http://$$server:$$port; }"
+      - "autoexposer.advanced_config=location ~ / { client_max_body_size 0; if ($$http_content_type ~* \"application/grpc\") { grpc_pass grpc://__LXC_IP__:51515; } proxy_pass http://__LXC_IP__:51515; }"
 
   portainer-agent:
     image: portainer/agent:latest
@@ -543,6 +591,11 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
 EOF
+
+# Replace placeholders with actual values
+pct exec $CTID -- sed -i "s|__LXC_IP__|$STATIC_IP|g" /opt/sync/docker-compose.yml
+pct exec $CTID -- sed -i "s|__KOPIA_USER__|$KOPIA_USER|g" /opt/sync/docker-compose.yml
+pct exec $CTID -- sed -i "s|__KOPIA_PASS__|$KOPIA_PASS|g" /opt/sync/docker-compose.yml
 
 echo "Starting Docker Compose..."
 # Pull images with retry
@@ -642,9 +695,19 @@ else
 fi
 echo -e ""
 echo -e "${GREEN}3) Kopia (Snapshot & Incremental Backup)${NC}"
-echo -e "   URL             : ${YELLOW}$KOPIA_URL${NC}"
+echo -e "   Web UI URL      : ${YELLOW}$KOPIA_URL${NC}"
+echo -e "   Username        : ${GREEN}$KOPIA_USER${NC}"
+echo -e "   Password        : ${GREEN}$KOPIA_PASS${NC}"
 echo -e "   Repository      : /mnt/vault/kopia-snapshots (inside LXC)"
 echo -e "   Source Data     : /data → points to /mnt/vault/syncthing"
+echo -e ""
+echo -e "   ${BOLD}How to connect Kopia Client (App/CLI) to this Server:${NC}"
+echo -e "   - ${BOLD}Remote/Secure Connection:${NC}"
+echo -e "     Use Server URL : ${YELLOW}https://kopia.3lmagary.com:443${NC}"
+echo -e "     (Connects via HTTPS port 443. Nginx Proxy Manager terminates SSL and"
+echo -e "      routes the gRPC traffic to Kopia on port 51515)."
+echo -e "   - ${BOLD}Local Connection (Inside home network only):${NC}"
+echo -e "     Use Server URL : ${YELLOW}http://$LXC_IP:51515${NC}"
 echo -e ""
 echo -e "${YELLOW}To configure Obsidian:${NC}"
 echo -e " 1. Install 'Obsidian CoSync' plugin."
