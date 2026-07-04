@@ -219,6 +219,12 @@ systemctl restart docker && sleep 5'
         KOPIA_URL="http://$LXC_IP:51515"
     fi
 
+    # Trigger autoexposer to register in NPM, Cloudflare and Homepage
+    if [ -d "/opt/homeserver/auto_exposer" ]; then
+        echo -e "${GREEN}Triggering AutoExposer to register updated services...${NC}"
+        (cd /opt/homeserver/auto_exposer && ./venv/bin/python main.py sync) || true
+    fi
+
     CONN_CODE=$(pct exec $CTID -- grep "CONNECTION_CODE" /opt/cosync/.env | cut -d= -f2 | tr -d '\r\n ' || true)
 
     echo -e "${BLUE}==========================================${NC}"
