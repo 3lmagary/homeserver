@@ -233,6 +233,9 @@ while true; do
     echo -e "\n${GREEN}Starting: $SELECTED_TITLE...${NC}"
     echo -e "${YELLOW}--------------------------------------------------------------${NC}\n"
     
+    # Flush any leftover keypresses in the input buffer before running the script
+    read -t 0.2 -N 1000000 2>/dev/null || true
+    
     # Run the script and preserve exit code
     set +e
     bash "./$SELECTED_SCRIPT"

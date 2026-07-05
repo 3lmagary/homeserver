@@ -8,6 +8,9 @@ stty sane 2>/dev/null || true
 # Ignore SIGHUP to prevent premature termination from terminal/NoVNC disconnects
 trap '' HUP
 
+# Flush stdin buffer to clear any leftover keypresses from the menu selection
+read -t 0.2 -N 1000000 2>/dev/null || true
+
 # ==========================================
 # Proxmox Sync & Backup LXC Setup
 # (Syncthing + CoSync + Kopia)
