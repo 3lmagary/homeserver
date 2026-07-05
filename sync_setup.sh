@@ -5,6 +5,9 @@ set -Eeuo pipefail
 # Restore sane terminal settings in case the parent menu script left it in raw/silent mode
 stty sane 2>/dev/null || true
 
+# Ignore SIGHUP to prevent premature termination from terminal/NoVNC disconnects
+trap '' HUP
+
 # ==========================================
 # Proxmox Sync & Backup LXC Setup
 # (Syncthing + CoSync + Kopia)
