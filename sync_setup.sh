@@ -149,7 +149,7 @@ services:
       - server
       - start
       - --disable-csrf-token-checks
-      - --insecure
+      - --tls-generate-cert
       - --address=0.0.0.0:51515
       - --server-username=__KOPIA_USER__
       - --server-password=__KOPIA_PASS__
@@ -171,7 +171,8 @@ services:
       - "autoexposer.group=Sync & Backup"
       - "autoexposer.icon=kopia"
       - "autoexposer.port=51515"
-      - "autoexposer.advanced_config=location ~ / { client_max_body_size 0; if ($$http_content_type ~* \"application/grpc\") { error_page 418 = @grpc_backend; return 418; } proxy_pass http://__LXC_IP__:51515; } location @grpc_backend { client_max_body_size 0; grpc_pass grpc://__LXC_IP__:51515; }"
+      - "autoexposer.scheme=https"
+      - "autoexposer.advanced_config=location ~ / { client_max_body_size 0; if ($$http_content_type ~* \"application/grpc\") { error_page 418 = @grpc_backend; return 418; } proxy_pass https://__LXC_IP__:51515; } location @grpc_backend { client_max_body_size 0; grpc_pass grpcs://__LXC_IP__:51515; }"
 
   portainer-agent:
     image: portainer/agent:latest
@@ -639,7 +640,7 @@ services:
       - server
       - start
       - --disable-csrf-token-checks
-      - --insecure
+      - --tls-generate-cert
       - --address=0.0.0.0:51515
       - --server-username=__KOPIA_USER__
       - --server-password=__KOPIA_PASS__
@@ -661,7 +662,8 @@ services:
       - "autoexposer.group=Sync & Backup"
       - "autoexposer.icon=kopia"
       - "autoexposer.port=51515"
-      - "autoexposer.advanced_config=location ~ / { client_max_body_size 0; if ($$http_content_type ~* \"application/grpc\") { error_page 418 = @grpc_backend; return 418; } proxy_pass http://__LXC_IP__:51515; } location @grpc_backend { client_max_body_size 0; grpc_pass grpc://__LXC_IP__:51515; }"
+      - "autoexposer.scheme=https"
+      - "autoexposer.advanced_config=location ~ / { client_max_body_size 0; if ($$http_content_type ~* \"application/grpc\") { error_page 418 = @grpc_backend; return 418; } proxy_pass https://__LXC_IP__:51515; } location @grpc_backend { client_max_body_size 0; grpc_pass grpcs://__LXC_IP__:51515; }"
 
   portainer-agent:
     image: portainer/agent:latest

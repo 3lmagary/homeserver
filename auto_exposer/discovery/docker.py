@@ -92,6 +92,7 @@ def discover_from_lxc(ctid, lxc_name, lxc_ip, base_domain):
                     group=labels.get("autoexposer.group", "Docker Services"),
                     icon=labels.get("autoexposer.icon", "docker"),
                     advanced_config=labels.get("autoexposer.advanced_config", ""),
+                    forward_scheme=labels.get("autoexposer.scheme", labels.get("autoexposer.forward_scheme", "http")),
                     lxc_name=lxc_name,
                     skip_cf=labels.get("autoexposer.skip_cf", "false").lower() == "true",
                     skip_npm=labels.get("autoexposer.skip_npm", "false").lower() == "true"
