@@ -59,13 +59,23 @@ if [ -n "$EXISTING_CTID" ]; then
     if [ -z "$EXISTING_PASS" ]; then EXISTING_PASS="admin"; fi
     
     echo -e "${GREEN}Checking Kopia credentials...${NC}"
-    read -p "Do you want to update Kopia credentials? (y/N): " CHANGE_CREDS </dev/tty
+    if ! read -p "Do you want to update Kopia credentials? (y/N): " CHANGE_CREDS </dev/tty; then
+        CHANGE_CREDS="n"
+    fi
     if [[ "$CHANGE_CREDS" =~ ^[Yy]$ ]]; then
-        read -p "Enter new Username for Kopia [default: $EXISTING_USER]: " KOPIA_USER </dev/tty
+        if ! read -p "Enter new Username for Kopia [default: $EXISTING_USER]: " KOPIA_USER </dev/tty; then
+            KOPIA_USER="$EXISTING_USER"
+        fi
         if [ -z "$KOPIA_USER" ]; then KOPIA_USER="$EXISTING_USER"; fi
-        read -p "Enter new Password for Kopia: " KOPIA_PASS </dev/tty
+        
+        if ! read -p "Enter new Password for Kopia: " KOPIA_PASS </dev/tty; then
+            KOPIA_PASS=""
+        fi
         while [ -z "$KOPIA_PASS" ]; do
-            read -p "Password cannot be empty. Enter new Password for Kopia: " KOPIA_PASS </dev/tty
+            if ! read -p "Password cannot be empty. Enter new Password for Kopia: " KOPIA_PASS </dev/tty; then
+                KOPIA_PASS=""
+                break
+            fi
         done
     else
         KOPIA_USER="$EXISTING_USER"
@@ -339,7 +349,9 @@ else
         echo "[$i] $disk (Size: $D_SIZE, Format: $D_FSTYPE, Model: $D_MODEL)"
         ((i++))
     done
-    read -p "Enter the number of the drive you want to use [Default: 0]: " DISK_NUM < /dev/tty
+    if ! read -p "Enter the number of the drive you want to use [Default: 0]: " DISK_NUM </dev/tty; then
+        DISK_NUM="0"
+    fi
     if [ "${DISK_NUM:-0}" == "0" ]; then
         USE_EXTRA_DISK="no"
     elif [[ "$DISK_NUM" =~ ^[0-9]+$ ]] && [ "$DISK_NUM" -le "${#DISK_PATHS[@]}" ]; then
@@ -360,7 +372,9 @@ if [ "$USE_EXTRA_DISK" == "yes" ]; then
         else
             echo -e "${YELLOW}Warning: This drive is currently formatted as $FS_TYPE.${NC}"
         fi
-        read -p "Do you want to WIPE THIS ENTIRE DRIVE and format it to ext4? (y/N): " FORMAT_CHOICE < /dev/tty
+        if ! read -p "Do you want to WIPE THIS ENTIRE DRIVE and format it to ext4? (y/N): " FORMAT_CHOICE </dev/tty; then
+            FORMAT_CHOICE="n"
+        fi
         if [[ "$FORMAT_CHOICE" =~ ^[Yy]$ ]]; then
             echo -e "${RED}Formatting $SELECTED_DISK to ext4...${NC}"
             mkfs.ext4 -F "$SELECTED_DISK"
@@ -378,7 +392,9 @@ if [ "$USE_EXTRA_DISK" == "yes" ]; then
         MOUNT_DIR="$EXISTING_MOUNT"
         echo -e "${YELLOW}Drive already mounted at $MOUNT_DIR.${NC}"
     else
-        read -p "Drive Name (e.g. SyncDrive) [Default: SyncDrive]: " DRIVE_NAME < /dev/tty
+        if ! read -p "Drive Name (e.g. SyncDrive) [Default: SyncDrive]: " DRIVE_NAME </dev/tty; then
+            DRIVE_NAME="SyncDrive"
+        fi
         if [ -z "$DRIVE_NAME" ]; then DRIVE_NAME="SyncDrive"; fi
         DRIVE_NAME=$(echo "$DRIVE_NAME" | tr ' ' '_')
         MOUNT_DIR="/mnt/$DRIVE_NAME"
@@ -450,7 +466,9 @@ find_free_ip() {
 STATIC_IP=$(find_free_ip "$GW" || true)
 if [ -z "$STATIC_IP" ]; then
     echo -e "\n${YELLOW}Warning: Could not detect a free IP automatically.${NC}"
-    read -p "Please enter a static IP for the container (e.g. 192.168.0.101): " STATIC_IP < /dev/tty
+    if ! read -p "Please enter a static IP for the container (e.g. 192.168.0.101): " STATIC_IP </dev/tty; then
+        STATIC_IP=""
+    fi
     if [ -z "$STATIC_IP" ]; then
         echo -e "${RED}Error: Static IP is required to proceed.${NC}"
         exit 1
@@ -463,17 +481,26 @@ TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n
 if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
 
 # Disk size selection - defaults to 20GB for sufficient space for system + configs + local backups
-read -p "Enter Disk Size in GB for Sync LXC (default: 20): " DISK_SIZE </dev/tty
+if ! read -p "Enter Disk Size in GB for Sync LXC (default: 20): " DISK_SIZE </dev/tty; then
+    DISK_SIZE="20"
+fi
 if [ -z "$DISK_SIZE" ]; then DISK_SIZE="20"; fi
 if ! [[ "$DISK_SIZE" =~ ^[0-9]+$ ]]; then echo -e "${RED}Disk size must be a number.${NC}"; exit 1; fi
 
 # Prompt for Kopia credentials
-read -p "Enter Username for Kopia backup server [default: admin]: " KOPIA_USER </dev/tty
+if ! read -p "Enter Username for Kopia backup server [default: admin]: " KOPIA_USER </dev/tty; then
+    KOPIA_USER="admin"
+fi
 if [ -z "$KOPIA_USER" ]; then KOPIA_USER="admin"; fi
 
-read -p "Enter Password for Kopia backup server: " KOPIA_PASS </dev/tty
+if ! read -p "Enter Password for Kopia backup server: " KOPIA_PASS </dev/tty; then
+    KOPIA_PASS=""
+fi
 while [ -z "$KOPIA_PASS" ]; do
-    read -p "Password cannot be empty. Enter Password for Kopia: " KOPIA_PASS </dev/tty
+    if ! read -p "Password cannot be empty. Enter Password for Kopia: " KOPIA_PASS </dev/tty; then
+        KOPIA_PASS=""
+        break
+    fi
 done
 
 echo -e "${GREEN}[3/4] Creating LXC Container $CTID with ${DISK_SIZE}GB disk...${NC}"
