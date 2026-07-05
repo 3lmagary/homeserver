@@ -46,6 +46,9 @@ if [ -n "$EXISTING_CTID" ]; then
         sleep 5
     fi
     
+    # Get LXC IP address
+    LXC_IP=$(pct exec $CTID -- ip -4 -o addr show eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+    
     echo -e "${GREEN}Configuring Docker Compose stack for Syncthing, Kopia & Watchtower...${NC}"
     
     # Extract existing Kopia credentials if available
