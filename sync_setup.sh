@@ -245,9 +245,11 @@ systemctl restart docker && sleep 5'
     
     # Configure Kopia client user
     sleep 5
-    echo "Configuring Kopia client user: ${KOPIA_USER}@*..."
-    pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users add "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || \
-    pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users set "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || true
+    echo "Configuring Kopia client users: ${KOPIA_USER}@client and ${KOPIA_USER}@ubuntu..."
+    pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users add "${KOPIA_USER}@client" --user-password="$KOPIA_PASS" 2>/dev/null || \
+    pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users set "${KOPIA_USER}@client" --user-password="$KOPIA_PASS" 2>/dev/null || true
+    pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users add "${KOPIA_USER}@ubuntu" --user-password="$KOPIA_PASS" 2>/dev/null || \
+    pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users set "${KOPIA_USER}@ubuntu" --user-password="$KOPIA_PASS" 2>/dev/null || true
     pct exec $CTID -- docker compose -f /opt/sync/docker-compose.yml restart kopia
     
     echo -e "${GREEN}Installing git and deploying CoSync project...${NC}"
@@ -337,6 +339,7 @@ systemctl restart docker && sleep 5'
     echo -e "        and forwards gRPC traffic directly to Kopia on port 51515)."
     echo -e "     - Use Server Username: ${GREEN}$KOPIA_USER${NC}"
     echo -e "     - Use Server Password: ${GREEN}$KOPIA_PASS${NC}"
+    echo -e "     - (In Advanced Options, set Hostname to: ${GREEN}client${NC} or ${GREEN}ubuntu${NC})"
     echo -e "${BLUE}==========================================${NC}"
     exit 0
 fi
@@ -722,9 +725,11 @@ pct exec $CTID -- bash -c '
 
 # Configure Kopia client user
 sleep 5
-echo "Configuring Kopia client user: ${KOPIA_USER}@*..."
-pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users add "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || \
-pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users set "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || true
+echo "Configuring Kopia client users: ${KOPIA_USER}@client and ${KOPIA_USER}@ubuntu..."
+pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users add "${KOPIA_USER}@client" --user-password="$KOPIA_PASS" 2>/dev/null || \
+pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users set "${KOPIA_USER}@client" --user-password="$KOPIA_PASS" 2>/dev/null || true
+pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users add "${KOPIA_USER}@ubuntu" --user-password="$KOPIA_PASS" 2>/dev/null || \
+pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users set "${KOPIA_USER}@ubuntu" --user-password="$KOPIA_PASS" 2>/dev/null || true
 pct exec $CTID -- docker compose -f /opt/sync/docker-compose.yml restart kopia
 
 echo "Installing git and deploying CoSync project..."
@@ -824,6 +829,7 @@ echo -e ""
    echo -e "         and forwards gRPC traffic directly to Kopia on port 51515)."
    echo -e "      - Use Server Username: ${GREEN}$KOPIA_USER${NC}"
    echo -e "      - Use Server Password: ${GREEN}$KOPIA_PASS${NC}"
+   echo -e "      - (In Advanced Options, set Hostname to: ${GREEN}client${NC} or ${GREEN}ubuntu${NC})"
    echo -e ""
 echo -e "${YELLOW}To configure Obsidian:${NC}"
 echo -e " 1. Install 'Obsidian CoSync' plugin."
