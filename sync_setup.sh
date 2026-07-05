@@ -61,9 +61,19 @@ if [ -n "$EXISTING_CTID" ]; then
     EXISTING_REPO_PASS=$(pct exec $CTID -- grep "KOPIA_PASSWORD=" /opt/sync/docker-compose.yml 2>/dev/null | cut -d= -f2 | tr -d '\r\n\x27" ' || true)
     EXISTING_SERVER_PASS=$(pct exec $CTID -- grep "\--server-password=" /opt/sync/docker-compose.yml 2>/dev/null | cut -d= -f2 | tr -d '\r\n\x27" ' || true)
     
+    # Restore ampersands if corrupted by previous sed ampersand bugs
+    if [[ "$EXISTING_REPO_PASS" == *"__KOPIA_REPO_PASS__"* ]]; then
+        EXISTING_REPO_PASS="${EXISTING_REPO_PASS//__KOPIA_REPO_PASS__/&}"
+    fi
+    if [[ "$EXISTING_SERVER_PASS" == *"__KOPIA_PASS__"* ]]; then
+        EXISTING_SERVER_PASS="${EXISTING_SERVER_PASS//__KOPIA_PASS__/&}"
+    fi
+
     if [ -z "$EXISTING_USER" ] || [ "$EXISTING_USER" = "__KOPIA_USER__" ]; then EXISTING_USER="admin"; fi
-    if [ -z "$EXISTING_REPO_PASS" ] || [ "$EXISTING_REPO_PASS" = "__KOPIA_REPO_PASS__" ] || [ "$EXISTING_REPO_PASS" = "__KOPIA_PASS__" ]; then EXISTING_REPO_PASS="admin"; fi
-    if [ -z "$EXISTING_SERVER_PASS" ] || [ "$EXISTING_SERVER_PASS" = "__KOPIA_PASS__" ]; then EXISTING_SERVER_PASS="$EXISTING_REPO_PASS"; fi
+    if [ -z "$EXISTING_REPO_PASS" ] || [ "$EXISTING_REPO_PASS" = "__KOPIA_REPO_PASS__" ] || [ "$EXISTING_REPO_PASS" = "__KOPIA_PASS__" ] || [ "$EXISTING_REPO_PASS" = "admin" ]; then
+        EXISTING_REPO_PASS=$(openssl rand -hex 16)
+    fi
+    if [ -z "$EXISTING_SERVER_PASS" ] || [ "$EXISTING_SERVER_PASS" = "__KOPIA_PASS__" ]; then EXISTING_SERVER_PASS="admin"; fi
     
     echo -e "${GREEN}Checking Kopia credentials...${NC}"
     echo -n "Do you want to update Kopia Web UI credentials? (y/N): "
@@ -180,11 +190,21 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 EOF
 
+    # Escape special characters for sed replacements
+    SED_USER="${KOPIA_USER//\\/\\\\}"
+    SED_USER="${SED_USER//&/\\&}"
+    
+    SED_PASS="${KOPIA_PASS//\\/\\\\}"
+    SED_PASS="${SED_PASS//&/\\&}"
+    
+    SED_REPO_PASS="${KOPIA_REPO_PASS//\\/\\\\}"
+    SED_REPO_PASS="${SED_REPO_PASS//&/\\&}"
+
     # Replace placeholders with actual values
     pct exec $CTID -- sed -i "s|__LXC_IP__|$LXC_IP|g" /opt/sync/docker-compose.yml
-    pct exec $CTID -- sed -i "s|__KOPIA_USER__|$KOPIA_USER|g" /opt/sync/docker-compose.yml
-    pct exec $CTID -- sed -i "s|__KOPIA_PASS__|$KOPIA_PASS|g" /opt/sync/docker-compose.yml
-    pct exec $CTID -- sed -i "s|__KOPIA_REPO_PASS__|$KOPIA_REPO_PASS|g" /opt/sync/docker-compose.yml
+    pct exec $CTID -- sed -i "s|__KOPIA_USER__|$SED_USER|g" /opt/sync/docker-compose.yml
+    pct exec $CTID -- sed -i "s|__KOPIA_PASS__|$SED_PASS|g" /opt/sync/docker-compose.yml
+    pct exec $CTID -- sed -i "s|__KOPIA_REPO_PASS__|$SED_REPO_PASS|g" /opt/sync/docker-compose.yml
 
     # Fix TLS/DNS/MTU issues inside LXC: configure Docker daemon
     pct exec $CTID -- bash -c 'mkdir -p /etc/docker && cat > /etc/docker/daemon.json <<DAEMON
@@ -650,11 +670,21 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
 EOF
 
+# Escape special characters for sed replacements
+SED_USER="${KOPIA_USER//\\/\\\\}"
+SED_USER="${SED_USER//&/\\&}"
+
+SED_PASS="${KOPIA_PASS//\\/\\\\}"
+SED_PASS="${SED_PASS//&/\\&}"
+
+SED_REPO_PASS="${KOPIA_REPO_PASS//\\/\\\\}"
+SED_REPO_PASS="${SED_REPO_PASS//&/\\&}"
+
 # Replace placeholders with actual values
 pct exec $CTID -- sed -i "s|__LXC_IP__|$STATIC_IP|g" /opt/sync/docker-compose.yml
-pct exec $CTID -- sed -i "s|__KOPIA_USER__|$KOPIA_USER|g" /opt/sync/docker-compose.yml
-pct exec $CTID -- sed -i "s|__KOPIA_PASS__|$KOPIA_PASS|g" /opt/sync/docker-compose.yml
-pct exec $CTID -- sed -i "s|__KOPIA_REPO_PASS__|$KOPIA_REPO_PASS|g" /opt/sync/docker-compose.yml
+pct exec $CTID -- sed -i "s|__KOPIA_USER__|$SED_USER|g" /opt/sync/docker-compose.yml
+pct exec $CTID -- sed -i "s|__KOPIA_PASS__|$SED_PASS|g" /opt/sync/docker-compose.yml
+pct exec $CTID -- sed -i "s|__KOPIA_REPO_PASS__|$SED_REPO_PASS|g" /opt/sync/docker-compose.yml
 
 echo "Starting Docker Compose..."
 # Pull images with retry
