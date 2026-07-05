@@ -111,7 +111,6 @@ if [ -n "$EXISTING_CTID" ]; then
         /opt/sync/configs/kopia/config \
         /opt/sync/configs/kopia/cache \
         /opt/sync/configs/kopia/logs \
-        /mnt/vault/syncthing \
         /mnt/vault/kopia-snapshots
     
     # Create clean docker-compose.yml
@@ -162,7 +161,6 @@ services:
       - /opt/sync/configs/kopia/config:/app/config
       - /opt/sync/configs/kopia/cache:/app/cache
       - /opt/sync/configs/kopia/logs:/app/logs
-      - /mnt/vault/syncthing:/data:ro
       - /mnt/vault/kopia-snapshots:/repository
       - /tmp:/tmp:shared
     labels:
@@ -602,7 +600,6 @@ pct exec $CTID -- mkdir -p \
     /opt/sync/configs/kopia/config \
     /opt/sync/configs/kopia/cache \
     /opt/sync/configs/kopia/logs \
-    /mnt/vault/syncthing \
     /mnt/vault/kopia-snapshots
 
 # Create docker-compose.yml
@@ -653,7 +650,6 @@ services:
       - /opt/sync/configs/kopia/config:/app/config
       - /opt/sync/configs/kopia/cache:/app/cache
       - /opt/sync/configs/kopia/logs:/app/logs
-      - /mnt/vault/syncthing:/data:ro
       - /mnt/vault/kopia-snapshots:/repository
       - /tmp:/tmp:shared
     labels:
@@ -816,7 +812,6 @@ echo -e "   Username        : ${GREEN}$KOPIA_USER${NC}"
 echo -e "   Password        : ${GREEN}$KOPIA_PASS${NC} (For Web UI login)"
 echo -e "   Repo Password   : ${CYAN}$KOPIA_REPO_PASS${NC} (Master encryption key - saved in docker-compose.yml)"
 echo -e "   Repository      : /mnt/vault/kopia-snapshots (inside LXC)"
-echo -e "   Source Data     : /data → points to /mnt/vault/syncthing (in Kopia)"
 echo -e ""
    echo -e "   ${BOLD}How to configure and connect Kopia:${NC}"
    echo -e "   1. ${BOLD}Initialize/Connect Repository (First time in Web UI):${NC}"
