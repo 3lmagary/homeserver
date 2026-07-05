@@ -238,7 +238,7 @@ while true; do
     
     # Run the script and preserve exit code
     set +e
-    bash "./$SELECTED_SCRIPT"
+    bash "./$SELECTED_SCRIPT" < /dev/tty
     STATUS=$?
     set -e
     
