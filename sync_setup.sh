@@ -11,6 +11,7 @@ GREEN="\033[0;32m"
 BLUE="\033[0;34m"
 YELLOW="\033[1;33m"
 RED="\033[0;31m"
+BOLD="\033[1m"
 NC="\033[0m"
 
 echo -e "${BLUE}=========================================="
@@ -55,8 +56,8 @@ if [ -n "$EXISTING_CTID" ]; then
     EXISTING_USER=$(pct exec $CTID -- grep "\--server-username=" /opt/sync/docker-compose.yml 2>/dev/null | cut -d= -f2 | tr -d '\r\n ' || true)
     EXISTING_PASS=$(pct exec $CTID -- grep "KOPIA_PASSWORD=" /opt/sync/docker-compose.yml 2>/dev/null | cut -d= -f2 | tr -d '\r\n\x27" ' || true)
     
-    if [ -z "$EXISTING_USER" ]; then EXISTING_USER="admin"; fi
-    if [ -z "$EXISTING_PASS" ]; then EXISTING_PASS="admin"; fi
+    if [ -z "$EXISTING_USER" ] || [ "$EXISTING_USER" = "__KOPIA_USER__" ]; then EXISTING_USER="admin"; fi
+    if [ -z "$EXISTING_PASS" ] || [ "$EXISTING_PASS" = "__KOPIA_PASS__" ]; then EXISTING_PASS="admin"; fi
     
     echo -e "${GREEN}Checking Kopia credentials...${NC}"
     if ! read -p "Do you want to update Kopia credentials? (y/N): " CHANGE_CREDS </dev/tty; then
