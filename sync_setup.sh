@@ -243,14 +243,12 @@ systemctl restart docker && sleep 5'
       docker compose up -d --remove-orphans
     '
     
-    # Configure Kopia client user if repository is already initialized
-    sleep 2
-    if pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia repository status &>/dev/null; then
-        echo "Configuring Kopia client user: ${KOPIA_USER}@*..."
-        pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users add "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || \
-        pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users set "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || true
-        pct exec $CTID -- docker compose -f /opt/sync/docker-compose.yml restart kopia
-    fi
+    # Configure Kopia client user
+    sleep 5
+    echo "Configuring Kopia client user: ${KOPIA_USER}@*..."
+    pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users add "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || \
+    pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users set "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || true
+    pct exec $CTID -- docker compose -f /opt/sync/docker-compose.yml restart kopia
     
     echo -e "${GREEN}Installing git and deploying CoSync project...${NC}"
     pct exec $CTID -- bash -c "apt-get update && apt-get install -y git"
@@ -722,14 +720,12 @@ pct exec $CTID -- bash -c '
   docker compose up -d
 '
 
-# Configure Kopia client user if repository is already initialized
-sleep 2
-if pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia repository status &>/dev/null; then
-    echo "Configuring Kopia client user: ${KOPIA_USER}@*..."
-    pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users add "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || \
-    pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users set "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || true
-    pct exec $CTID -- docker compose -f /opt/sync/docker-compose.yml restart kopia
-fi
+# Configure Kopia client user
+sleep 5
+echo "Configuring Kopia client user: ${KOPIA_USER}@*..."
+pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users add "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || \
+pct exec $CTID -- docker exec -e KOPIA_PASSWORD="$KOPIA_REPO_PASS" kopia kopia server users set "${KOPIA_USER}@*" --user-password="$KOPIA_PASS" 2>/dev/null || true
+pct exec $CTID -- docker compose -f /opt/sync/docker-compose.yml restart kopia
 
 echo "Installing git and deploying CoSync project..."
 pct exec $CTID -- bash -c "apt-get update && apt-get install -y git"
