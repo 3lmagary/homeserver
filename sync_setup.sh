@@ -287,7 +287,8 @@ systemctl restart docker && sleep 5'
     echo -e "${GREEN}Kopia Backup Server (Credentials & Connection):${NC}"
     echo -e "  Web UI URL       : ${YELLOW}$KOPIA_URL${NC}"
     echo -e "  Username         : ${GREEN}$KOPIA_USER${NC}"
-    echo -e "  Password         : ${GREEN}$KOPIA_PASS${NC}"
+    echo -e "  Password         : ${GREEN}$KOPIA_PASS${NC} (For Web UI login)"
+    echo -e "  Repo Password    : ${CYAN}$KOPIA_REPO_PASS${NC} (Master encryption key - saved in docker-compose.yml)"
     echo -e ""
     echo -e "  ${BOLD}How to configure and connect Kopia:${NC}"
     echo -e "  1. ${BOLD}Initialize/Connect Repository (First time in Web UI):${NC}"
@@ -525,6 +526,10 @@ while [ -z "$KOPIA_PASS" ]; do
     fi
 done
 
+# Automatically generate a highly secure random Repository Password (32 chars)
+KOPIA_REPO_PASS=$(openssl rand -hex 16)
+
+
 echo -e "${GREEN}[3/4] Creating LXC Container $CTID with ${DISK_SIZE}GB disk...${NC}"
 pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:${DISK_SIZE}" --hostname "$LXC_NAME" --net0 $NET_CONFIG \
     --unprivileged 1 --features nesting=1,keyctl=1
@@ -604,7 +609,7 @@ services:
     ports:
       - '51515:51515'
     environment:
-      - KOPIA_PASSWORD=__KOPIA_PASS__
+      - KOPIA_PASSWORD=__KOPIA_REPO_PASS__
       - TZ=Africa/Cairo
     volumes:
       - /opt/sync/configs/kopia/config:/app/config
@@ -648,6 +653,7 @@ EOF
 pct exec $CTID -- sed -i "s|__LXC_IP__|$STATIC_IP|g" /opt/sync/docker-compose.yml
 pct exec $CTID -- sed -i "s|__KOPIA_USER__|$KOPIA_USER|g" /opt/sync/docker-compose.yml
 pct exec $CTID -- sed -i "s|__KOPIA_PASS__|$KOPIA_PASS|g" /opt/sync/docker-compose.yml
+pct exec $CTID -- sed -i "s|__KOPIA_REPO_PASS__|$KOPIA_REPO_PASS|g" /opt/sync/docker-compose.yml
 
 echo "Starting Docker Compose..."
 # Pull images with retry
@@ -749,7 +755,8 @@ echo -e ""
 echo -e "${GREEN}3) Kopia (Snapshot & Incremental Backup)${NC}"
 echo -e "   Web UI URL      : ${YELLOW}$KOPIA_URL${NC}"
 echo -e "   Username        : ${GREEN}$KOPIA_USER${NC}"
-echo -e "   Password        : ${GREEN}$KOPIA_PASS${NC}"
+echo -e "   Password        : ${GREEN}$KOPIA_PASS${NC} (For Web UI login)"
+echo -e "   Repo Password   : ${CYAN}$KOPIA_REPO_PASS${NC} (Master encryption key - saved in docker-compose.yml)"
 echo -e "   Repository      : /mnt/vault/kopia-snapshots (inside LXC)"
 echo -e "   Source Data     : /data → points to /mnt/vault/syncthing"
 echo -e ""
