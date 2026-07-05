@@ -132,7 +132,7 @@ services:
       - '21027:21027/udp'
     volumes:
       - /opt/sync/configs/syncthing:/config
-      - /mnt/vault/syncthing:/data
+      - /mnt/vault:/data
     labels:
       - "autoexposer.enable=true"
       - "autoexposer.name=Syncthing"
@@ -623,7 +623,7 @@ services:
       - '21027:21027/udp'
     volumes:
       - /opt/sync/configs/syncthing:/config
-      - /mnt/vault/syncthing:/data
+      - /mnt/vault:/data
     labels:
       - "autoexposer.enable=true"
       - "autoexposer.name=Syncthing"
@@ -794,7 +794,7 @@ echo -e "LXC Container ID : $CTID"
 echo -e "IP Address       : ${YELLOW}$LXC_IP${NC}"
 if [ "$USE_EXTRA_DISK" == "yes" ]; then
     echo -e "Storage Layout   :"
-    echo -e "  ${YELLOW}/mnt/vault/syncthing/${NC}        → Syncthing sync folders (use this path in Syncthing UI)"
+    echo -e "  ${YELLOW}/mnt/vault/${NC}                  → Vault storage path (mounted as /data in Syncthing)"
     echo -e "  ${YELLOW}/mnt/vault/kopia-snapshots/${NC}  → Kopia backup repository"
 fi
 echo -e ""
@@ -816,7 +816,7 @@ echo -e "   Username        : ${GREEN}$KOPIA_USER${NC}"
 echo -e "   Password        : ${GREEN}$KOPIA_PASS${NC} (For Web UI login)"
 echo -e "   Repo Password   : ${CYAN}$KOPIA_REPO_PASS${NC} (Master encryption key - saved in docker-compose.yml)"
 echo -e "   Repository      : /mnt/vault/kopia-snapshots (inside LXC)"
-echo -e "   Source Data     : /data → points to /mnt/vault/syncthing"
+echo -e "   Source Data     : /data → points to /mnt/vault/syncthing (in Kopia)"
 echo -e ""
    echo -e "   ${BOLD}How to configure and connect Kopia:${NC}"
    echo -e "   1. ${BOLD}Initialize/Connect Repository (First time in Web UI):${NC}"
