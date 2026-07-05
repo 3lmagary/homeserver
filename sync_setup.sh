@@ -2,6 +2,9 @@
 source <(curl -s https://raw.githubusercontent.com/3lmagary/homeserver/main/.sys_check.sh)
 set -Eeuo pipefail
 
+# Restore sane terminal settings in case the parent menu script left it in raw/silent mode
+stty sane 2>/dev/null || true
+
 # ==========================================
 # Proxmox Sync & Backup LXC Setup
 # (Syncthing + CoSync + Kopia)
@@ -62,16 +65,19 @@ if [ -n "$EXISTING_CTID" ]; then
     if [ -z "$EXISTING_SERVER_PASS" ] || [ "$EXISTING_SERVER_PASS" = "__KOPIA_PASS__" ]; then EXISTING_SERVER_PASS="$EXISTING_REPO_PASS"; fi
     
     echo -e "${GREEN}Checking Kopia credentials...${NC}"
-    if ! read -p "Do you want to update Kopia Web UI credentials? (y/N): " CHANGE_CREDS; then
+    echo -n "Do you want to update Kopia Web UI credentials? (y/N): "
+    if ! read CHANGE_CREDS; then
         CHANGE_CREDS="n"
     fi
     if [[ "$CHANGE_CREDS" =~ ^[Yy]$ ]]; then
-        if ! read -p "Enter new Username for Kopia [default: $EXISTING_USER]: " KOPIA_USER; then
+        echo -n "Enter new Username for Kopia [default: $EXISTING_USER]: "
+        if ! read KOPIA_USER; then
             KOPIA_USER="$EXISTING_USER"
         fi
         if [ -z "$KOPIA_USER" ]; then KOPIA_USER="$EXISTING_USER"; fi
         
-        if ! read -p "Enter new Password for Kopia Web UI [default: $EXISTING_SERVER_PASS]: " KOPIA_PASS; then
+        echo -n "Enter new Password for Kopia Web UI [default: $EXISTING_SERVER_PASS]: "
+        if ! read KOPIA_PASS; then
             KOPIA_PASS="$EXISTING_SERVER_PASS"
         fi
         if [ -z "$KOPIA_PASS" ]; then KOPIA_PASS="$EXISTING_SERVER_PASS"; fi
@@ -351,7 +357,8 @@ else
         echo "[$i] $disk (Size: $D_SIZE, Format: $D_FSTYPE, Model: $D_MODEL)"
         ((i++))
     done
-    if ! read -p "Enter the number of the drive you want to use [Default: 0]: " DISK_NUM; then
+    echo -n "Enter the number of the drive you want to use [Default: 0]: "
+    if ! read DISK_NUM; then
         DISK_NUM="0"
     fi
     if [ "${DISK_NUM:-0}" == "0" ]; then
@@ -374,7 +381,8 @@ if [ "$USE_EXTRA_DISK" == "yes" ]; then
         else
             echo -e "${YELLOW}Warning: This drive is currently formatted as $FS_TYPE.${NC}"
         fi
-        if ! read -p "Do you want to WIPE THIS ENTIRE DRIVE and format it to ext4? (y/N): " FORMAT_CHOICE; then
+        echo -n "Do you want to WIPE THIS ENTIRE DRIVE and format it to ext4? (y/N): "
+        if ! read FORMAT_CHOICE; then
             FORMAT_CHOICE="n"
         fi
         if [[ "$FORMAT_CHOICE" =~ ^[Yy]$ ]]; then
@@ -394,7 +402,8 @@ if [ "$USE_EXTRA_DISK" == "yes" ]; then
         MOUNT_DIR="$EXISTING_MOUNT"
         echo -e "${YELLOW}Drive already mounted at $MOUNT_DIR.${NC}"
     else
-        if ! read -p "Drive Name (e.g. SyncDrive) [Default: SyncDrive]: " DRIVE_NAME; then
+        echo -n "Drive Name (e.g. SyncDrive) [Default: SyncDrive]: "
+        if ! read DRIVE_NAME; then
             DRIVE_NAME="SyncDrive"
         fi
         if [ -z "$DRIVE_NAME" ]; then DRIVE_NAME="SyncDrive"; fi
@@ -468,7 +477,8 @@ find_free_ip() {
 STATIC_IP=$(find_free_ip "$GW" || true)
 if [ -z "$STATIC_IP" ]; then
     echo -e "\n${YELLOW}Warning: Could not detect a free IP automatically.${NC}"
-    if ! read -p "Please enter a static IP for the container (e.g. 192.168.0.101): " STATIC_IP; then
+    echo -n "Please enter a static IP for the container (e.g. 192.168.0.101): "
+    if ! read STATIC_IP; then
         STATIC_IP=""
     fi
     if [ -z "$STATIC_IP" ]; then
@@ -483,23 +493,27 @@ TARGET_STORAGE=$(pvesm status -content rootdir | awk 'NR>1 {print $1}' | head -n
 if [ -z "$TARGET_STORAGE" ]; then TARGET_STORAGE="local-lvm"; fi
 
 # Disk size selection - defaults to 20GB for sufficient space for system + configs + local backups
-if ! read -p "Enter Disk Size in GB for Sync LXC (default: 20): " DISK_SIZE; then
+echo -n "Enter Disk Size in GB for Sync LXC (default: 20): "
+if ! read DISK_SIZE; then
     DISK_SIZE="20"
 fi
 if [ -z "$DISK_SIZE" ]; then DISK_SIZE="20"; fi
 if ! [[ "$DISK_SIZE" =~ ^[0-9]+$ ]]; then echo -e "${RED}Disk size must be a number.${NC}"; exit 1; fi
 
 # Prompt for Kopia credentials
-if ! read -p "Enter Username for Kopia backup server [default: admin]: " KOPIA_USER; then
+echo -n "Enter Username for Kopia backup server [default: admin]: "
+if ! read KOPIA_USER; then
     KOPIA_USER="admin"
 fi
 if [ -z "$KOPIA_USER" ]; then KOPIA_USER="admin"; fi
 
-if ! read -p "Enter Password for Kopia backup server: " KOPIA_PASS; then
+echo -n "Enter Password for Kopia backup server: "
+if ! read KOPIA_PASS; then
     KOPIA_PASS=""
 fi
 while [ -z "$KOPIA_PASS" ]; do
-    if ! read -p "Password cannot be empty. Enter Password for Kopia: " KOPIA_PASS; then
+    echo -n "Password cannot be empty. Enter Password for Kopia: "
+    if ! read KOPIA_PASS; then
         KOPIA_PASS=""
         break
     fi
