@@ -54,13 +54,15 @@ if [ -n "$EXISTING_CTID" ]; then
     
     # Extract existing Kopia credentials if available
     EXISTING_USER=$(pct exec $CTID -- grep "\--server-username=" /opt/sync/docker-compose.yml 2>/dev/null | cut -d= -f2 | tr -d '\r\n ' || true)
-    EXISTING_PASS=$(pct exec $CTID -- grep "KOPIA_PASSWORD=" /opt/sync/docker-compose.yml 2>/dev/null | cut -d= -f2 | tr -d '\r\n\x27" ' || true)
+    EXISTING_REPO_PASS=$(pct exec $CTID -- grep "KOPIA_PASSWORD=" /opt/sync/docker-compose.yml 2>/dev/null | cut -d= -f2 | tr -d '\r\n\x27" ' || true)
+    EXISTING_SERVER_PASS=$(pct exec $CTID -- grep "\--server-password=" /opt/sync/docker-compose.yml 2>/dev/null | cut -d= -f2 | tr -d '\r\n\x27" ' || true)
     
     if [ -z "$EXISTING_USER" ] || [ "$EXISTING_USER" = "__KOPIA_USER__" ]; then EXISTING_USER="admin"; fi
-    if [ -z "$EXISTING_PASS" ] || [ "$EXISTING_PASS" = "__KOPIA_PASS__" ]; then EXISTING_PASS="admin"; fi
+    if [ -z "$EXISTING_REPO_PASS" ] || [ "$EXISTING_REPO_PASS" = "__KOPIA_REPO_PASS__" ] || [ "$EXISTING_REPO_PASS" = "__KOPIA_PASS__" ]; then EXISTING_REPO_PASS="admin"; fi
+    if [ -z "$EXISTING_SERVER_PASS" ] || [ "$EXISTING_SERVER_PASS" = "__KOPIA_PASS__" ]; then EXISTING_SERVER_PASS="$EXISTING_REPO_PASS"; fi
     
     echo -e "${GREEN}Checking Kopia credentials...${NC}"
-    if ! read -p "Do you want to update Kopia credentials? (y/N): " CHANGE_CREDS; then
+    if ! read -p "Do you want to update Kopia Web UI credentials? (y/N): " CHANGE_CREDS; then
         CHANGE_CREDS="n"
     fi
     if [[ "$CHANGE_CREDS" =~ ^[Yy]$ ]]; then
@@ -69,19 +71,17 @@ if [ -n "$EXISTING_CTID" ]; then
         fi
         if [ -z "$KOPIA_USER" ]; then KOPIA_USER="$EXISTING_USER"; fi
         
-        if ! read -p "Enter new Password for Kopia: " KOPIA_PASS; then
-            KOPIA_PASS=""
+        if ! read -p "Enter new Password for Kopia Web UI [default: $EXISTING_SERVER_PASS]: " KOPIA_PASS; then
+            KOPIA_PASS="$EXISTING_SERVER_PASS"
         fi
-        while [ -z "$KOPIA_PASS" ]; do
-            if ! read -p "Password cannot be empty. Enter new Password for Kopia: " KOPIA_PASS; then
-                KOPIA_PASS=""
-                break
-            fi
-        done
+        if [ -z "$KOPIA_PASS" ]; then KOPIA_PASS="$EXISTING_SERVER_PASS"; fi
     else
         KOPIA_USER="$EXISTING_USER"
-        KOPIA_PASS="$EXISTING_PASS"
+        KOPIA_PASS="$EXISTING_SERVER_PASS"
     fi
+    
+    # Repository encryption password must remain unchanged to avoid breaking existing backups!
+    KOPIA_REPO_PASS="$EXISTING_REPO_PASS"
 
     pct exec $CTID -- mkdir -p \
         /opt/sync/configs/syncthing \
@@ -133,7 +133,7 @@ services:
     ports:
       - '51515:51515'
     environment:
-      - KOPIA_PASSWORD=__KOPIA_PASS__
+      - KOPIA_PASSWORD=__KOPIA_REPO_PASS__
       - TZ=Africa/Cairo
     volumes:
       - /opt/sync/configs/kopia/config:/app/config
@@ -177,6 +177,7 @@ EOF
     pct exec $CTID -- sed -i "s|__LXC_IP__|$LXC_IP|g" /opt/sync/docker-compose.yml
     pct exec $CTID -- sed -i "s|__KOPIA_USER__|$KOPIA_USER|g" /opt/sync/docker-compose.yml
     pct exec $CTID -- sed -i "s|__KOPIA_PASS__|$KOPIA_PASS|g" /opt/sync/docker-compose.yml
+    pct exec $CTID -- sed -i "s|__KOPIA_REPO_PASS__|$KOPIA_REPO_PASS|g" /opt/sync/docker-compose.yml
 
     # Fix TLS/DNS/MTU issues inside LXC: configure Docker daemon
     pct exec $CTID -- bash -c 'mkdir -p /etc/docker && cat > /etc/docker/daemon.json <<DAEMON
