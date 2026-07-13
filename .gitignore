@@ -1,4 +1,5 @@
 setup_media.sh
 setup_vpn_torrent.sh
 telemetry_server/
+remote_media.sh
 **/__pycache__/
