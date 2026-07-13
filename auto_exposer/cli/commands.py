@@ -519,11 +519,15 @@ def sync(dry_run: bool = False, base_domain: str = None, run_cleanup: bool = Fal
             
             if config_updated and settings_updated and widgets_updated:
                 # Restart Homepage container to force reload configs cleanly
-                subprocess.run([
-                    "/usr/sbin/pct", "exec", str(core_ctid), "--", "bash", "-c",
-                    "cd /opt/core && docker compose restart homepage"
-                ], capture_output=True, timeout=20)
-                console.print("[green]✓ Homepage dashboard configuration and styling updated and reloaded.[/green]")
+                try:
+                    subprocess.run([
+                        "/usr/sbin/pct", "exec", str(core_ctid), "--", "bash", "-c",
+                        "cd /opt/core && docker compose restart homepage"
+                    ], capture_output=True, timeout=60)
+                    console.print("[green]✓ Homepage dashboard configuration and styling updated and reloaded.[/green]")
+                except subprocess.TimeoutExpired:
+                    logger.warning("Homepage restart timed out — configs were written successfully but container may need a manual restart.")
+                    console.print("[yellow]⚠ Homepage configs updated but restart timed out. Run manually: pct exec {} -- bash -c 'cd /opt/core && docker compose restart homepage'[/yellow]".format(core_ctid))
             else:
                 console.print("[yellow]⚠ Failed to update Homepage configuration, settings, or widgets.[/yellow]")
     else:
