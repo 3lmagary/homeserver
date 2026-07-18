@@ -172,26 +172,38 @@ if [ "$ROLE_CHOICE" = "1" ] || [ "$ROLE_CHOICE" = "3" ]; then
     pct exec $CTID -- bash -c "echo 'FLAGS=\"--advertise-routes=${SUBNET_CIDR}\"' > /etc/default/tailscaled" 2>/dev/null || true
 fi
 
-echo -e "${GREEN}[4/4] Bringing up Tailscale...${NC}"
-echo -e "${YELLOW}You will now be prompted to authenticate with Tailscale.${NC}"
-echo -e "${YELLOW}Open the shown URL in your browser and log in, then return here.${NC}"
-echo ""
+echo -e "${GREEN}[4/4] Starting Tailscale daemon...${NC}"
+# Make sure the daemon is enabled + running before 'tailscale up'
+pct exec $CTID -- systemctl enable tailscaled >/dev/null 2>&1 || true
+pct exec $CTID -- systemctl restart tailscaled >/dev/null 2>&1 || true
+sleep 3
+# Fallback: start the daemon manually if systemd unit did not come up
+if ! pct exec $CTID -- bash -c "systemctl is-active --quiet tailscaled" 2>/dev/null; then
+    pct exec $CTID -- bash -c "tailscaled --state /var/lib/tailscale/tailscaled.state --socket /var/run/tailscale/tailscaled.sock >/var/log/tailscaled.log 2>&1 &"
+    sleep 3
+fi
 
 TS_UP_ARGS="--accept-routes"
 if [ "$ROLE_CHOICE" = "2" ] || [ "$ROLE_CHOICE" = "3" ]; then
     TS_UP_ARGS="$TS_UP_ARGS --advertise-exit-node"
 fi
 
-pct exec $CTID -- tailscale up $TS_UP_ARGS || {
-    echo -e "${RED}Failed to bring up Tailscale. Check the auth URL and try manually:${NC}"
-    echo -e "pct exec $CTID -- tailscale up $TS_UP_ARGS"
-    exit 1
-}
+echo -e "${YELLOW}You will now be prompted to authenticate with Tailscale.${NC}"
+echo -e "${YELLOW}Open the shown URL in your browser and log in, then return here.${NC}"
+echo ""
 
-# Enable service on boot
-pct exec $CTID -- systemctl enable tailscaled >/dev/null 2>&1 || true
+# Auth failure should NOT destroy the container (keep it for manual retry)
+if pct exec $CTID -- tailscale up $TS_UP_ARGS; then
+    echo -e "${GREEN}✓ Tailscale authenticated and connected.${NC}"
+else
+    echo -e "${RED}⚠️  Tailscale authentication failed or was interrupted.${NC}"
+    echo -e "${YELLOW}The container was kept running. Retry manually with:${NC}"
+    echo -e "  pct exec $CTID -- tailscale up $TS_UP_ARGS"
+    echo -e "Then check status with:"
+    echo -e "  pct exec $CTID -- tailscale status"
+fi
 
-# Deployment successful - disable rollback
+# Deployment successful - disable rollback (container is provisioned either way)
 ROLLBACK_REQUIRED=false
 trap - EXIT ERR
 
