@@ -89,7 +89,7 @@ if [ -n "$EXISTING_CTID" ] && pct status "$EXISTING_CTID" 2>/dev/null | grep -q 
     fi
 fi
 
-SCRIPT_FILES=("setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_hermes.sh" "setup_n8n.sh" "sync_setup.sh")
+SCRIPT_FILES=("setup.sh" "nas_setup.sh" "adguard_unbound.sh" "setup_core.sh" "setup_dashboard.sh" "setup_hermes.sh" "setup_n8n.sh" "sync_setup.sh" "setup_tailscale.sh")
 declare -A SCRIPT_TITLES
 SCRIPT_TITLES["setup.sh"]="Proxmox Base Node Setup"
 SCRIPT_TITLES["nas_setup.sh"]="Expandable Samba NAS Setup"
@@ -99,6 +99,7 @@ SCRIPT_TITLES["adguard_unbound.sh"]="AdGuard Home + Unbound DNS Setup"
 SCRIPT_TITLES["setup_hermes.sh"]="Hermes AI Agent Stack (Autonomous AI Agent & Dashboard)"
 SCRIPT_TITLES["setup_n8n.sh"]="n8n + Evolution API + Postgres Setup (Automation Stack)"
 SCRIPT_TITLES["sync_setup.sh"]="Sync & Backup Server (CoSync + Syncthing + Kopia)"
+SCRIPT_TITLES["setup_tailscale.sh"]="Tailscale VPN Gateway (Subnet Router / Exit Node)"
 
 # Dynamically scan for available scripts
 AVAILABLE_SCRIPTS=()
