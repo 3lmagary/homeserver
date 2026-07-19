@@ -33,12 +33,14 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 LXC_NAME="Tailscale-Gateway"
+TS_HOSTNAME="server"
 EXISTING_CTID=$(pct list 2>/dev/null | awk -v name="$LXC_NAME" '$3 == name {print $1}' || true)
 
 IS_UPDATE=false
 ROLLBACK_REQUIRED=true
 CTID=""
 STATIC_IP=""
+ROLE_CHOICE="1"
 
 if [ -n "$EXISTING_CTID" ]; then
     CTID="$EXISTING_CTID"
@@ -78,17 +80,18 @@ cleanup_on_exit() {
 
 trap cleanup_on_exit EXIT ERR
 
+GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
+CIDR=$(ip -o -f inet addr show scope global | awk '{print $4}' | head -n 1 | cut -d/ -f2)
+if [ -z "$CIDR" ]; then CIDR="24"; fi
+SUBNET_CIDR="${GW%.*}.0/${CIDR}"
+
 if [ "$IS_UPDATE" = false ]; then
-    echo -e "${GREEN}[1/4] Preparing LXC Container...${NC}"
+    echo -e "${GREEN}[1/5] Preparing LXC Container...${NC}"
     pveam update >/dev/null 2>&1 || true
     TEMPLATE_PATH=$(pveam available -section system | grep debian-12-standard | awk '{print $2}' | head -n 1)
     if [ -z "$TEMPLATE_PATH" ]; then echo -e "${RED}Could not find Debian 12 template.${NC}"; exit 1; fi
     if ! pveam list local | grep -q debian-12; then pveam download local "$TEMPLATE_PATH" >/dev/null 2>&1; fi
     LOCAL_TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -n 1)
-
-    GW=$(ip route show default | awk '/default/ {print $3}' | head -n 1)
-    CIDR=$(ip -o -f inet addr show | awk '/scope global/ {print $4}' | head -n 1 | cut -d/ -f2)
-    if [ -z "$CIDR" ]; then CIDR="24"; fi
 
     echo -ne "\nScanning network to find a free static IP automatically..."
     find_free_ip() {
@@ -132,7 +135,11 @@ if [ "$IS_UPDATE" = false ]; then
     fi
     echo -e "Selected IP: ${YELLOW}$STATIC_IP${NC}"
 
-    read -p "Enter Disk Size in GB (default: 4): " DISK_SIZE < /dev/tty
+    if [ -t 0 ]; then
+        read -p "Enter Disk Size in GB (default: 4): " DISK_SIZE
+    else
+        DISK_SIZE="4"
+    fi
     if [ -z "$DISK_SIZE" ]; then DISK_SIZE="4"; fi
     if ! [[ "$DISK_SIZE" =~ ^[0-9]+$ ]]; then echo -e "${RED}Disk size must be a number.${NC}"; exit 1; fi
 
@@ -140,7 +147,11 @@ if [ "$IS_UPDATE" = false ]; then
     echo "[1] Subnet Router (route your whole LAN through Tailscale) (Recommended)"
     echo "[2] Exit Node (route all your device traffic through this home connection)"
     echo "[3] Both (Subnet Router + Exit Node)"
-    read -p "Choice [1-3] (default: 1): " ROLE_CHOICE < /dev/tty
+    if [ -t 0 ]; then
+        read -p "Choice [1-3] (default: 1): " ROLE_CHOICE
+    else
+        ROLE_CHOICE="1"
+    fi
     ROLE_CHOICE=${ROLE_CHOICE:-"1"}
 
     NET_CONFIG="name=eth0,bridge=vmbr0,ip=${STATIC_IP}/${CIDR},gw=${GW}"
@@ -153,57 +164,98 @@ if [ "$IS_UPDATE" = false ]; then
     pct create $CTID "$LOCAL_TEMPLATE" --storage "$TARGET_STORAGE" --rootfs "$TARGET_STORAGE:$DISK_SIZE" --hostname "$LXC_NAME" \
         --net0 "$NET_CONFIG" --unprivileged 1 --features nesting=1,keyctl=1
     pct set $CTID -onboot 1 --timezone host
+
+    # Add TUN device pass-through to container configuration
+    LXC_CONF="/etc/pve/lxc/${CTID}.conf"
+    if ! grep -q "lxc.cgroup2.devices.allow: c 10:200 rwm" "$LXC_CONF"; then
+        echo "lxc.cgroup2.devices.allow: c 10:200 rwm" >> "$LXC_CONF"
+    fi
+    if ! grep -q "lxc.mount.entry: /dev/net/tun dev/net/tun" "$LXC_CONF"; then
+        echo "lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file" >> "$LXC_CONF"
+    fi
+
     pct start $CTID
 
     echo "Waiting for network..."
-    sleep 15
+    sleep 10
 else
-    echo -e "${GREEN}[1/4] Container exists, verifying network...${NC}"
+    echo -e "${GREEN}[1/5] Container exists, verifying network & TUN device...${NC}"
+    LXC_CONF="/etc/pve/lxc/${CTID}.conf"
+    UPDATED_CONF=false
+    if ! grep -q "lxc.cgroup2.devices.allow: c 10:200 rwm" "$LXC_CONF"; then
+        echo "lxc.cgroup2.devices.allow: c 10:200 rwm" >> "$LXC_CONF"
+        UPDATED_CONF=true
+    fi
+    if ! grep -q "lxc.mount.entry: /dev/net/tun dev/net/tun" "$LXC_CONF"; then
+        echo "lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file" >> "$LXC_CONF"
+        UPDATED_CONF=true
+    fi
+    if [ "$UPDATED_CONF" = true ]; then
+        echo -e "${YELLOW}Restarting LXC to apply TUN device configuration...${NC}"
+        pct reboot "$CTID"
+        sleep 5
+    fi
 fi
 
-echo -e "${GREEN}[2/4] Installing Tailscale...${NC}"
-pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certificates" >/dev/null 2>&1
+echo -e "${GREEN}[2/5] Enabling IP Forwarding inside Container...${NC}"
+pct exec $CTID -- sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1 || true
+pct exec $CTID -- sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null 2>&1 || true
+pct exec $CTID -- bash -c "mkdir -p /etc/sysctl.d && echo -e 'net.ipv4.ip_forward = 1\nnet.ipv6.conf.all.forwarding = 1' > /etc/sysctl.d/99-tailscale.conf" >/dev/null 2>&1 || true
+
+echo -e "${GREEN}[3/5] Installing Tailscale & Dependencies...${NC}"
+pct exec $CTID -- bash -c "apt-get update && apt-get install -y curl ca-certificates iptables" >/dev/null 2>&1
 pct exec $CTID -- bash -c "curl -fsSL https://tailscale.com/install.sh | sh" >/dev/null 2>&1
 
-echo -e "${GREEN}[3/4] Configuring Tailscale role...${NC}"
-SUBNET_CIDR="${GW%.*}.0/${CIDR}"
-
-if [ "$ROLE_CHOICE" = "1" ] || [ "$ROLE_CHOICE" = "3" ]; then
-    pct exec $CTID -- bash -c "echo 'FLAGS=\"--advertise-routes=${SUBNET_CIDR}\"' > /etc/default/tailscaled" 2>/dev/null || true
-fi
-
-echo -e "${GREEN}[4/4] Starting Tailscale daemon...${NC}"
-# Make sure the daemon is enabled + running before 'tailscale up'
-pct exec $CTID -- systemctl enable tailscaled >/dev/null 2>&1 || true
-pct exec $CTID -- systemctl restart tailscaled >/dev/null 2>&1 || true
+echo -e "${GREEN}[4/5] Starting Tailscale daemon...${NC}"
+pct exec $CTID -- systemctl enable --now tailscaled >/dev/null 2>&1 || true
 sleep 3
-# Fallback: start the daemon manually if systemd unit did not come up
-if ! pct exec $CTID -- bash -c "systemctl is-active --quiet tailscaled" 2>/dev/null; then
-    pct exec $CTID -- bash -c "tailscaled --state /var/lib/tailscale/tailscaled.state --socket /var/run/tailscale/tailscaled.sock >/var/log/tailscaled.log 2>&1 &"
-    sleep 3
-fi
 
-TS_UP_ARGS="--accept-routes"
+TS_UP_ARGS="--hostname=${TS_HOSTNAME} --accept-routes"
+if [ "$ROLE_CHOICE" = "1" ] || [ "$ROLE_CHOICE" = "3" ]; then
+    TS_UP_ARGS="$TS_UP_ARGS --advertise-routes=${SUBNET_CIDR}"
+fi
 if [ "$ROLE_CHOICE" = "2" ] || [ "$ROLE_CHOICE" = "3" ]; then
     TS_UP_ARGS="$TS_UP_ARGS --advertise-exit-node"
 fi
 
+echo -e "${GREEN}[5/5] Authenticating Tailscale...${NC}"
 echo -e "${YELLOW}You will now be prompted to authenticate with Tailscale.${NC}"
 echo -e "${YELLOW}Open the shown URL in your browser and log in, then return here.${NC}"
 echo ""
 
 # Auth failure should NOT destroy the container (keep it for manual retry)
 if pct exec $CTID -- tailscale up $TS_UP_ARGS; then
-    echo -e "${GREEN}✓ Tailscale authenticated and connected.${NC}"
+    echo -e "${GREEN}✓ Tailscale authenticated and connected as '${TS_HOSTNAME}'.${NC}"
 else
-    echo -e "${RED}⚠️  Tailscale authentication failed or was interrupted.${NC}"
-    echo -e "${YELLOW}The container was kept running. Retry manually with:${NC}"
+    echo -e "${RED}⚠️  Tailscale authentication pending or interrupted.${NC}"
+    echo -e "${YELLOW}The container is ready. Complete authentication manually with:${NC}"
     echo -e "  pct exec $CTID -- tailscale up $TS_UP_ARGS"
     echo -e "Then check status with:"
     echo -e "  pct exec $CTID -- tailscale status"
 fi
 
-# Deployment successful - disable rollback (container is provisioned either way)
+# ==========================================
+# Register with Homepage Dashboard
+# ==========================================
+CORE_CTID=$(pct list 2>/dev/null | awk '$3 == "Core-Services" {print $1}' || true)
+if [ -n "$CORE_CTID" ] && pct status "$CORE_CTID" 2>/dev/null | grep -q "status: running"; then
+    echo -e "${GREEN}Registering Tailscale in Homepage Dashboard...${NC}"
+    pct exec $CORE_CTID -- bash -c '
+        CONF="/opt/core/homepage/services.yaml"
+        if [ -f "$CONF" ] && ! grep -q -i "Tailscale" "$CONF"; then
+            cat << "ENTRY" >> "$CONF"
+
+- VPN & Network:
+  - Tailscale:
+      icon: tailscale
+      href: https://login.tailscale.com/admin/machines
+      description: Mesh VPN Gateway
+ENTRY
+        fi
+    ' 2>/dev/null || true
+fi
+
+# Deployment successful - disable rollback
 ROLLBACK_REQUIRED=false
 trap - EXIT ERR
 
@@ -211,6 +263,8 @@ echo -e "\n${BLUE}=========================================="
 echo -e " ✅ Tailscale Gateway Ready!"
 echo -e "==========================================${NC}"
 echo -e "${GREEN}▶ Tailscale Gateway${NC}"
+echo -e "   - LXC Name: ${YELLOW}${LXC_NAME}${NC} (ID: ${CTID})"
+echo -e "   - TS Name:  ${YELLOW}${TS_HOSTNAME}${NC}"
 echo -e "   - LXC IP:   ${YELLOW}${STATIC_IP}${NC}"
 echo -e "   - Status:   ${YELLOW}pct exec $CTID -- tailscale status${NC}"
 echo -e ""
@@ -228,5 +282,4 @@ fi
 echo -e "${YELLOW}Note:${NC} After authenticating, approve the advertised routes/exit node"
 echo -e "in the Tailscale admin console (https://login.tailscale.com)."
 echo -e ""
-echo -e "\033[1;33mNote:\033[0m LXC root password prompt has been removed for better automation."
-echo -e "To access this container's shell, run: \033[0;32mpct enter $CTID\033[0m from your Proxmox host."
+echo -e "\033[1;33mNote:\033[0m To access this container's shell, run: \033[0;32mpct enter $CTID\033[0m from your Proxmox host."
