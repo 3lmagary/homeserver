@@ -491,19 +491,20 @@ find_free_ip() {
     local tmp_dir=$(mktemp -d)
     for i in {50..150}; do
         local test_ip="${base_ip}.${i}"
-        if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip"; then
+        if [ "$test_ip" = "$gw" ] || (echo "$assigned_ips" | grep -q -w "$test_ip"); then
             continue
         fi
-        ( ping -c 1 -W 1 "$test_ip" &>/dev/null && touch "${tmp_dir}/${i}" ) &
+        ( trap '' ERR; ping -c 1 -W 1 "$test_ip" &>/dev/null && touch "${tmp_dir}/${i}" ) &
     done
-    sleep 1.2
+    wait
+    sleep 0.5
     local free_ip=""
     for i in {50..150}; do
         local test_ip="${base_ip}.${i}"
-        if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip" || [ -f "${tmp_dir}/${i}" ]; then
+        if [ "$test_ip" = "$gw" ] || (echo "$assigned_ips" | grep -q -w "$test_ip") || [ -f "${tmp_dir}/${i}" ]; then
             continue
         fi
-        if ip neigh show | grep -q -w "$test_ip"; then
+        if ip neigh show 2>/dev/null | grep -q -w "$test_ip"; then
             continue
         fi
         free_ip="$test_ip"

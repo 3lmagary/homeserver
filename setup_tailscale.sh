@@ -93,7 +93,6 @@ if [ "$IS_UPDATE" = false ]; then
     if ! pveam list local | grep -q debian-12; then pveam download local "$TEMPLATE_PATH" >/dev/null 2>&1; fi
     LOCAL_TEMPLATE=$(pveam list local | grep debian-12 | awk '{print $1}' | head -n 1)
 
-    echo -ne "\nScanning network to find a free static IP automatically..."
     find_free_ip() {
         local gw="$1"
         local base_ip=$(echo "$gw" | cut -d. -f1-3)
@@ -102,19 +101,20 @@ if [ "$IS_UPDATE" = false ]; then
         local tmp_dir=$(mktemp -d)
         for i in {50..150}; do
             local test_ip="${base_ip}.${i}"
-            if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip"; then
+            if [ "$test_ip" = "$gw" ] || (echo "$assigned_ips" | grep -q -w "$test_ip"); then
                 continue
             fi
-            ( ping -c 1 -W 1 "$test_ip" &>/dev/null && touch "${tmp_dir}/${i}" ) &
+            ( trap '' ERR; ping -c 1 -W 1 "$test_ip" &>/dev/null && touch "${tmp_dir}/${i}" ) &
         done
-        sleep 1.2
+        wait
+        sleep 0.5
         local free_ip=""
         for i in {50..150}; do
             local test_ip="${base_ip}.${i}"
-            if [ "$test_ip" = "$gw" ] || echo "$assigned_ips" | grep -q -w "$test_ip" || [ -f "${tmp_dir}/${i}" ]; then
+            if [ "$test_ip" = "$gw" ] || (echo "$assigned_ips" | grep -q -w "$test_ip") || [ -f "${tmp_dir}/${i}" ]; then
                 continue
             fi
-            if ip neigh show | grep -q -w "$test_ip"; then
+            if ip neigh show 2>/dev/null | grep -q -w "$test_ip"; then
                 continue
             fi
             free_ip="$test_ip"
@@ -128,7 +128,7 @@ if [ "$IS_UPDATE" = false ]; then
         return 1
     }
 
-    STATIC_IP=$(find_free_ip "$GW")
+    STATIC_IP=$(find_free_ip "$GW" || true)
     if [ -z "$STATIC_IP" ]; then
         echo -e "\n${RED}Error: Could not find any free IP address in the subnet automatically.${NC}"
         exit 1
